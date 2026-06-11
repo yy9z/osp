@@ -1,0 +1,189 @@
+/* 全局基础样式 - 科大系简约主题 */
+:root {
+  /* 科大品牌色 */
+  --ustc-primary: #004191;
+  --ustc-primary-light: #1a5cb8;
+  --ustc-primary-dark: #003170;
+
+  /* 辅助色 */
+  --ustc-bg: #F5F7FA;
+  --ustc-card: #FFFFFF;
+  --ustc-text: #303133;
+  --ustc-text-secondary: #606266;
+  --ustc-text-placeholder: #909399;
+
+  /* 圆角 */
+  --ustc-radius-sm: 8px;
+  --ustc-radius-md: 12px;
+  --ustc-radius-lg: 16px;
+
+  /* 阴影 */
+  --ustc-shadow-sm: 0 2px 12px rgba(0, 0, 0, 0.04);
+  --ustc-shadow-md: 0 4px 20px rgba(0, 0, 0, 0.05);
+  --ustc-shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.08);
+
+  /* 毛玻璃效果 */
+  --ustc-glass-bg: rgba(255, 255, 255, 0.85);
+  --ustc-glass-border: rgba(255, 255, 255, 0.3);
+
+  /* 渐变 */
+  --ustc-gradient-primary: linear-gradient(135deg, #004191 0%, #1a5cb8 100%);
+  --ustc-gradient-overlay: linear-gradient(135deg, rgba(0, 65, 145, 0.9) 0%, rgba(26, 92, 184, 0.7) 100%);
+
+  /* 导航激活渐变 */
+  --ustc-gradient-active: linear-gradient(135deg, #004191 0%, #1a5cb8 100%);
+
+  /* Element Plus 覆盖 - 科大蓝 */
+  --el-color-primary: #004191;
+  --el-color-success: #67C23A;
+  --el-color-warning: #E6A23C;
+  --el-color-danger: #F56C6C;
+  --el-color-error: #F56C6C;
+  --el-color-info: #909399;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    'Noto Sans', sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ustc-text);
+  background-color: var(--ustc-bg);
+}
+
+#app {
+  min-height: 100vh;
+}
+
+/* Element Plus 组件样式覆盖 */
+.el-button--primary {
+  --el-button-bg-color: var(--ustc-primary);
+  --el-button-border-color: var(--ustc-primary);
+  --el-button-hover-bg-color: var(--ustc-primary-light);
+  --el-button-hover-border-color: var(--ustc-primary-light);
+}
+
+/* 页面容器 */
+.page-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0;
+}
+
+/* 卡片样式 - 科大系 */
+.el-card {
+  border-radius: var(--ustc-radius-md);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  box-shadow: var(--ustc-shadow-md);
+  background: var(--ustc-card);
+}
+
+.el-card:hover {
+  box-shadow: var(--ustc-shadow-lg);
+  transform: translateY(-2px);
+  transition: all 0.3s ease;
+}
+
+/* 滚动条样式 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--ustc-bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+/* 淡入动画 */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* 导航路径流光效果 */
+@keyframes flowLight {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
+}
+
+.breadcrumb-item {
+  position: relative;
+  opacity: 0.8;
+  transition: opacity 0.3s ease;
+}
+
+.breadcrumb-item::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -2px;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--ustc-primary) 20%,
+    var(--ustc-primary-light) 50%,
+    var(--ustc-primary) 80%,
+    transparent
+  );
+  background-size: 200% 100%;
+  animation: flowLight 3s linear infinite;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.breadcrumb-item:hover::after {
+  opacity: 1;
+}
+
+/* NProgress 进度条样式 */
+#nprogress {
+  pointer-events: none;
+}
+
+#nprogress .bar {
+  background: var(--ustc-gradient-primary);
+  position: fixed;
+  z-index: 9999;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 3px;
+}
+
+#nprogress .peg {
+  display: block;
+  position: absolute;
+  right: 0;
+  width: 100px;
+  height: 100%;
+  box-shadow: 0 0 10px var(--ustc-primary), 0 0 5px var(--ustc-primary);
+  opacity: 1;
+  transform: rotate(3deg) translate(0px, -4px);
+}

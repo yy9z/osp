@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.caspar.mapper.CampusPathEdgeMapper">
+
+    <resultMap id="BaseResultMap" type="com.caspar.entity.CampusPathEdge">
+        <id column="id" property="id"/>
+        <result column="from_node_id" property="fromNodeId"/>
+        <result column="to_node_id" property="toNodeId"/>
+        <result column="distance" property="distance"/>
+        <result column="way_type" property="wayType"/>
+        <result column="create_time" property="createTime"/>
+    </resultMap>
+
+    <!-- 查询所有边 -->
+    <select id="selectAll" resultMap="BaseResultMap">
+        SELECT * FROM campus_path_edge
+    </select>
+
+    <!-- 根据ID查询 -->
+    <select id="findById" resultMap="BaseResultMap">
+        SELECT * FROM campus_path_edge WHERE id = #{id}
+    </select>
+
+    <!-- 查询从指定节点出发的所有边 -->
+    <select id="findByFromNode" resultMap="BaseResultMap">
+        SELECT * FROM campus_path_edge WHERE from_node_id = #{fromNodeId}
+    </select>
+
+    <!-- 查询到指定节点的所有边 -->
+    <select id="findByToNode" resultMap="BaseResultMap">
+        SELECT * FROM campus_path_edge WHERE to_node_id = #{toNodeId}
+    </select>
+
+    <!-- 查询两点之间的边 -->
+    <select id="findBetweenNodes" resultMap="BaseResultMap">
+        SELECT * FROM campus_path_edge
+        WHERE from_node_id = #{fromNodeId} AND to_node_id = #{toNodeId}
+        LIMIT 1
+    </select>
+
+    <!-- 插入 -->
+    <insert id="insert" parameterType="com.caspar.entity.CampusPathEdge" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO campus_path_edge (from_node_id, to_node_id, distance, way_type)
+        VALUES (#{fromNodeId}, #{toNodeId}, #{distance}, #{wayType})
+    </insert>
+
+    <!-- 批量插入 -->
+    <insert id="batchInsert" parameterType="java.util.List" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO campus_path_edge (from_node_id, to_node_id, distance, way_type)
+        VALUES
+        <foreach collection="edges" item="edge" separator=",">
+            (#{edge.fromNodeId}, #{edge.toNodeId}, #{edge.distance}, #{edge.wayType})
+        </foreach>
+    </insert>
+
+    <!-- 更新 -->
+    <update id="update" parameterType="com.caspar.entity.CampusPathEdge">
+        UPDATE campus_path_edge
+        <set>
+            <if test="fromNodeId != null">from_node_id = #{fromNodeId},</if>
+            <if test="toNodeId != null">to_node_id = #{toNodeId},</if>
+            <if test="distance != null">distance = #{distance},</if>
+            <if test="wayType != null">way_type = #{wayType},</if>
+        </set>
+        WHERE id = #{id}
+    </update>
+
+    <!-- 删除 -->
+    <delete id="deleteById">
+        DELETE FROM campus_path_edge WHERE id = #{id}
+    </delete>
+
+    <!-- 删除与指定节点相关的所有边 -->
+    <delete id="deleteByNodeId">
+        DELETE FROM campus_path_edge
+        WHERE from_node_id = #{nodeId} OR to_node_id = #{nodeId}
+    </delete>
+
+</mapper>

@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.caspar.mapper.GoodsFavoriteMapper">
+
+    <!-- 基础列 -->
+    <sql id="Base_Column_List">
+        f.id, f.user_id, f.goods_id, f.create_time
+    </sql>
+
+    <!-- 结果映射 -->
+    <resultMap id="BaseResultMap" type="com.caspar.entity.GoodsFavorite">
+        <id column="id" property="id"/>
+        <result column="user_id" property="userId"/>
+        <result column="goods_id" property="goodsId"/>
+        <result column="create_time" property="createTime"/>
+    </resultMap>
+
+    <!-- VO结果映射 -->
+    <resultMap id="VOResultMap" type="com.caspar.entity.dto.SecondhandGoodsVO">
+        <id column="id" property="id"/>
+        <result column="title" property="title"/>
+        <result column="description" property="description"/>
+        <result column="price" property="price"/>
+        <result column="category" property="category"/>
+        <result column="images" property="images"/>
+        <result column="condition" property="condition"/>
+        <result column="status" property="status" typeHandler="org.apache.ibatis.type.EnumTypeHandler"/>
+        <result column="seller_id" property="sellerId"/>
+        <result column="seller_name" property="sellerName"/>
+        <result column="view_count" property="viewCount"/>
+        <result column="create_time" property="createTime"/>
+    </resultMap>
+
+    <!-- 插入收藏记录 -->
+    <insert id="insert" parameterType="com.caspar.entity.GoodsFavorite" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO goods_favorite (user_id, goods_id, create_time)
+        VALUES (#{userId}, #{goodsId}, #{createTime})
+    </insert>
+
+    <!-- 删除收藏记录 -->
+    <delete id="deleteByUserIdAndGoodsId">
+        DELETE FROM goods_favorite
+        WHERE user_id = #{userId} AND goods_id = #{goodsId}
+    </delete>
+
+    <!-- 查询用户是否已收藏指定商品 -->
+    <select id="findByUserIdAndGoodsId" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM goods_favorite f
+        WHERE f.user_id = #{userId} AND f.goods_id = #{goodsId}
+    </select>
+
+    <!-- 查询用户的收藏列表 -->
+    <select id="selectFavoritesByUserId" resultMap="VOResultMap">
+        SELECT s.id, s.title, s.price, s.category, s.images,
+               s.condition, s.status, s.seller_id, s.view_count, s.create_time,
+               u.username as seller_name
+        FROM goods_favorite f
+        INNER JOIN secondhand s ON f.goods_id = s.id
+        LEFT JOIN user u ON s.seller_id = u.user_id
+        WHERE f.user_id = #{userId}
+        AND s.status = 'APPROVED'
+        AND (s.deleted = 0 OR s.deleted IS NULL)
+        ORDER BY f.create_time DESC
+        LIMIT #{offset}, #{limit}
+    </select>
+
+    <!-- 统计用户收藏数量 -->
+    <select id="countByUserId" resultType="java.lang.Long">
+        SELECT COUNT(*)
+        FROM goods_favorite f
+        INNER JOIN secondhand s ON f.goods_id = s.id
+        WHERE f.user_id = #{userId}
+        AND s.status = 'APPROVED'
+        AND (s.deleted = 0 OR s.deleted IS NULL)
+    </select>
+
+    <!-- 检查是否已收藏 -->
+    <select id="existsByUserIdAndGoodsId" resultType="java.lang.Boolean">
+        SELECT COUNT(*) > 0
+        FROM goods_favorite f
+        WHERE f.user_id = #{userId} AND f.goods_id = #{goodsId}
+    </select>
+
+</mapper>

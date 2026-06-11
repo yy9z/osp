@@ -1,0 +1,183 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.caspar.mapper.DormitoryMapper">
+
+    <resultMap id="BaseResultMap" type="com.caspar.entity.Dormitory">
+        <id column="id" property="id"/>
+        <result column="building" property="building"/>
+        <result column="floor" property="floor"/>
+        <result column="room_no" property="roomNo"/>
+        <result column="type" property="type"/>
+        <result column="capacity" property="capacity"/>
+        <result column="current_count" property="currentCount"/>
+        <result column="gender" property="gender"/>
+        <result column="head_id" property="headId"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <select id="findById" resultMap="BaseResultMap">
+        SELECT * FROM dormitory WHERE id = #{id}
+    </select>
+
+    <select id="findByBuildingAndRoom" resultMap="BaseResultMap">
+        SELECT *
+        FROM dormitory
+        WHERE building = #{building}
+          AND room_no = #{roomNo}
+        LIMIT 1
+    </select>
+
+    <select id="selectList" resultMap="BaseResultMap">
+        SELECT * FROM dormitory
+        <where>
+            <if test="building != null and building != ''">
+                AND building = #{building}
+            </if>
+            <if test="floor != null">
+                AND floor = #{floor}
+            </if>
+            <if test="roomNo != null and roomNo != ''">
+                AND room_no = #{roomNo}
+            </if>
+        </where>
+        ORDER BY building, floor, room_no
+        LIMIT #{offset}, #{limit}
+    </select>
+
+    <select id="selectManagedList" resultMap="BaseResultMap">
+        SELECT * FROM dormitory
+        <where>
+            AND (
+                building = #{building}
+                <if test="buildingAlias != null and buildingAlias != '' and buildingAlias != building">
+                    OR building = #{buildingAlias}
+                </if>
+            )
+            <if test="floor != null">
+                AND floor = #{floor}
+            </if>
+            <if test="roomNo != null and roomNo != ''">
+                AND room_no = #{roomNo}
+            </if>
+        </where>
+        ORDER BY floor, room_no
+        LIMIT #{offset}, #{limit}
+    </select>
+
+    <select id="count" resultType="java.lang.Long">
+        SELECT COUNT(*) FROM dormitory
+        <where>
+            <if test="building != null and building != ''">
+                AND building = #{building}
+            </if>
+            <if test="floor != null">
+                AND floor = #{floor}
+            </if>
+            <if test="roomNo != null and roomNo != ''">
+                AND room_no = #{roomNo}
+            </if>
+        </where>
+    </select>
+
+    <select id="countManaged" resultType="java.lang.Long">
+        SELECT COUNT(*) FROM dormitory
+        <where>
+            AND (
+                building = #{building}
+                <if test="buildingAlias != null and buildingAlias != '' and buildingAlias != building">
+                    OR building = #{buildingAlias}
+                </if>
+            )
+            <if test="floor != null">
+                AND floor = #{floor}
+            </if>
+            <if test="roomNo != null and roomNo != ''">
+                AND room_no = #{roomNo}
+            </if>
+        </where>
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO dormitory (building, floor, room_no, type, capacity, current_count, gender, head_id)
+        VALUES (#{building}, #{floor}, #{roomNo}, #{type}, #{capacity}, #{currentCount}, #{gender}, #{headId})
+    </insert>
+
+    <update id="update">
+        UPDATE dormitory
+        <set>
+            <if test="building != null">building = #{building},</if>
+            <if test="floor != null">floor = #{floor},</if>
+            <if test="roomNo != null">room_no = #{roomNo},</if>
+            <if test="type != null">type = #{type},</if>
+            <if test="capacity != null">capacity = #{capacity},</if>
+            <if test="currentCount != null">current_count = #{currentCount},</if>
+            <if test="gender != null">gender = #{gender},</if>
+            <if test="headId != null">head_id = #{headId},</if>
+        </set>
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteById">
+        DELETE FROM dormitory WHERE id = #{id}
+    </delete>
+
+    <select id="findMemberByUserId" resultType="com.caspar.entity.DormitoryMember">
+        SELECT * FROM dormitory_member WHERE user_id = #{userId}
+    </select>
+
+    <select id="selectMembersByDormitoryId" resultType="com.caspar.entity.dto.DormitoryVO$MemberVO">
+        SELECT
+            dm.id,
+            dm.dormitory_id as dormitoryId,
+            dm.user_id as userId,
+            u.username,
+            u.real_name as realName,
+            u.phone,
+            u.avatar,
+            dm.join_time as joinTime
+        FROM dormitory_member dm
+        INNER JOIN user u ON dm.user_id = u.user_id
+        WHERE dm.dormitory_id = #{dormitoryId}
+        ORDER BY dm.join_time
+    </select>
+
+    <insert id="insertMember">
+        INSERT INTO dormitory_member (dormitory_id, user_id)
+        VALUES (#{dormitoryId}, #{userId})
+    </insert>
+
+    <delete id="deleteMember">
+        DELETE FROM dormitory_member WHERE dormitory_id = #{dormitoryId} AND user_id = #{userId}
+    </delete>
+
+    <update id="updateCurrentCount">
+        UPDATE dormitory SET current_count = current_count + #{count} WHERE id = #{dormitoryId}
+    </update>
+
+    <update id="updateHeadId">
+        UPDATE dormitory SET head_id = #{headId} WHERE id = #{id}
+    </update>
+
+    <update id="updateByBuilding">
+        UPDATE dormitory
+        SET building = #{newBuilding},
+            gender = #{gender},
+            capacity = #{capacity},
+            type = #{type}
+        WHERE building = #{oldBuilding}
+    </update>
+
+    <select id="countOverCapacity" resultType="java.lang.Integer">
+        SELECT COUNT(*)
+        FROM dormitory
+        WHERE current_count > #{capacity}
+          AND (
+            building = #{buildingName}
+            <if test="buildingCode != null and buildingCode != '' and buildingCode != buildingName">
+                OR building = #{buildingCode}
+            </if>
+          )
+    </select>
+
+</mapper>

@@ -1,0 +1,233 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.caspar.mapper.DormitoryRepairMapper">
+
+    <resultMap id="BaseResultMap" type="com.caspar.entity.DormitoryRepair">
+        <id column="id" property="id"/>
+        <result column="dormitory_id" property="dormitoryId"/>
+        <result column="campus" property="campus"/>
+        <result column="building" property="building"/>
+        <result column="room_no" property="roomNo"/>
+        <result column="user_id" property="userId"/>
+        <result column="description" property="description"/>
+        <result column="images" property="images"/>
+        <result column="urgency" property="urgency"/>
+        <result column="status" property="status"/>
+        <result column="remark" property="remark"/>
+        <result column="handle_images" property="handleImages"/>
+        <result column="handler_id" property="handlerId"/>
+        <result column="handle_time" property="handleTime"/>
+        <result column="processing_started_at" property="processingStartedAt"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <resultMap id="RepairVOResultMap" type="com.caspar.entity.dto.RepairVO" extends="BaseResultMap">
+        <result column="building" property="building"/>
+        <result column="room_no" property="roomNo"/>
+        <result column="username" property="username"/>
+        <result column="real_name" property="realName"/>
+        <result column="phone" property="phone"/>
+        <result column="handler_name" property="handlerName"/>
+    </resultMap>
+
+    <select id="findById" resultMap="BaseResultMap">
+        SELECT * FROM dormitory_repair WHERE id = #{id}
+    </select>
+
+    <select id="findVOById" resultMap="RepairVOResultMap">
+        SELECT
+            dr.*,
+            COALESCE(d.building, dr.building, CONVERT(ud.building USING utf8mb4) COLLATE utf8mb4_unicode_ci) AS building,
+            COALESCE(d.room_no, dr.room_no, CONVERT(ud.room USING utf8mb4) COLLATE utf8mb4_unicode_ci) AS room_no,
+            u.username,
+            u.real_name,
+            u.phone,
+            hu.real_name AS handler_name
+        FROM dormitory_repair dr
+        LEFT JOIN dormitory d ON dr.dormitory_id = d.id
+        LEFT JOIN user_dormitory ud ON dr.user_id = ud.user_id
+        INNER JOIN user u ON dr.user_id = u.user_id
+        LEFT JOIN user hu ON dr.handler_id = hu.user_id
+        WHERE dr.id = #{id}
+    </select>
+
+    <select id="selectListByUserId" resultMap="RepairVOResultMap">
+        SELECT
+            dr.*,
+            COALESCE(d.building, dr.building, CONVERT(ud.building USING utf8mb4) COLLATE utf8mb4_unicode_ci) AS building,
+            COALESCE(d.room_no, dr.room_no, CONVERT(ud.room USING utf8mb4) COLLATE utf8mb4_unicode_ci) AS room_no,
+            u.username,
+            u.real_name,
+            u.phone,
+            hu.real_name AS handler_name
+        FROM dormitory_repair dr
+        LEFT JOIN dormitory d ON dr.dormitory_id = d.id
+        LEFT JOIN user_dormitory ud ON dr.user_id = ud.user_id
+        INNER JOIN user u ON dr.user_id = u.user_id
+        LEFT JOIN user hu ON dr.handler_id = hu.user_id
+        WHERE dr.user_id = #{userId}
+        ORDER BY 
+            CASE dr.urgency WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
+            dr.create_time ASC
+        LIMIT #{offset}, #{limit}
+    </select>
+
+    <select id="countByUserId" resultType="java.lang.Long">
+        SELECT COUNT(*) FROM dormitory_repair WHERE user_id = #{userId}
+    </select>
+
+    <select id="selectList" resultMap="RepairVOResultMap">
+        SELECT
+            dr.*,
+            COALESCE(d.building, dr.building, CONVERT(ud.building USING utf8mb4) COLLATE utf8mb4_unicode_ci) AS building,
+            COALESCE(d.room_no, dr.room_no, CONVERT(ud.room USING utf8mb4) COLLATE utf8mb4_unicode_ci) AS room_no,
+            u.username,
+            u.real_name,
+            u.phone,
+            hu.real_name AS handler_name
+        FROM dormitory_repair dr
+        LEFT JOIN dormitory d ON dr.dormitory_id = d.id
+        LEFT JOIN user_dormitory ud ON dr.user_id = ud.user_id
+        INNER JOIN user u ON dr.user_id = u.user_id
+        LEFT JOIN user hu ON dr.handler_id = hu.user_id
+        <where>
+            <if test="status != null and status != ''">
+                AND dr.status = #{status}
+            </if>
+            <if test="building != null and building != ''">
+                AND COALESCE(d.building, dr.building, CONVERT(ud.building USING utf8mb4) COLLATE utf8mb4_unicode_ci) = #{building}
+            </if>
+            <if test="urgency != null and urgency != ''">
+                AND dr.urgency = #{urgency}
+            </if>
+        </where>
+        ORDER BY 
+            CASE dr.urgency WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
+            dr.create_time ASC
+        LIMIT #{offset}, #{limit}
+    </select>
+
+    <select id="count" resultType="java.lang.Long">
+        SELECT COUNT(*)
+        FROM dormitory_repair dr
+        LEFT JOIN dormitory d ON dr.dormitory_id = d.id
+        LEFT JOIN user_dormitory ud ON dr.user_id = ud.user_id
+        <where>
+            <if test="status != null and status != ''">
+                AND dr.status = #{status}
+            </if>
+            <if test="building != null and building != ''">
+                AND COALESCE(d.building, dr.building, CONVERT(ud.building USING utf8mb4) COLLATE utf8mb4_unicode_ci) = #{building}
+            </if>
+            <if test="urgency != null and urgency != ''">
+                AND dr.urgency = #{urgency}
+            </if>
+        </where>
+    </select>
+
+    <select id="countByStatus" resultType="java.util.Map">
+        SELECT dr.status, COUNT(*) AS cnt
+        FROM dormitory_repair dr
+        LEFT JOIN dormitory d ON dr.dormitory_id = d.id
+        LEFT JOIN user_dormitory ud ON dr.user_id = ud.user_id
+        <where>
+            <if test="building != null and building != ''">
+                AND COALESCE(d.building, dr.building, CONVERT(ud.building USING utf8mb4) COLLATE utf8mb4_unicode_ci) = #{building}
+            </if>
+        </where>
+        GROUP BY dr.status
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO dormitory_repair (dormitory_id, campus, building, room_no, user_id, description, images, urgency, status)
+        VALUES (#{dormitoryId}, #{campus}, #{building}, #{roomNo}, #{userId}, #{description}, #{images}, #{urgency}, 'PENDING')
+    </insert>
+
+    <update id="updateStatus">
+        UPDATE dormitory_repair
+        SET status = #{status},
+            remark = #{remark},
+            handle_images = #{handleImages},
+            handler_id = #{handlerId},
+            handle_time = CURRENT_TIMESTAMP,
+            update_time = CURRENT_TIMESTAMP
+        WHERE id = #{id}
+    </update>
+
+    <update id="cancelByUser">
+        UPDATE dormitory_repair
+        SET status = 'CANCELLED',
+            update_time = CURRENT_TIMESTAMP
+        WHERE id = #{id}
+          AND user_id = #{userId}
+          AND status = #{currentStatus}
+    </update>
+
+    <update id="updateByUser">
+        UPDATE dormitory_repair
+        SET description = #{description},
+            urgency = #{urgency},
+            images = #{images},
+            update_time = CURRENT_TIMESTAMP
+        WHERE id = #{id}
+          AND user_id = #{userId}
+          AND status = 'CANCELLED'
+    </update>
+
+    <update id="reapplyByUser">
+        UPDATE dormitory_repair
+        SET status = 'PENDING',
+            create_time = CURRENT_TIMESTAMP,
+            update_time = CURRENT_TIMESTAMP
+        WHERE id = #{id}
+          AND user_id = #{userId}
+          AND status = 'CANCELLED'
+    </update>
+
+    <delete id="deleteByUser">
+        DELETE FROM dormitory_repair
+        WHERE id = #{id}
+          AND user_id = #{userId}
+    </delete>
+
+    <update id="updateResolvedLocation">
+        UPDATE dormitory_repair
+        SET dormitory_id = #{dormitoryId},
+            campus = #{campus},
+            building = #{building},
+            room_no = #{roomNo},
+            update_time = CURRENT_TIMESTAMP
+        WHERE id = #{id}
+    </update>
+
+    <update id="startRepair">
+        UPDATE dormitory_repair
+        SET status = 'PROCESSING',
+            handler_id = #{handlerId},
+            processing_started_at = CURRENT_TIMESTAMP,
+            update_time = CURRENT_TIMESTAMP
+        WHERE id = #{id}
+          AND status = 'PENDING'
+    </update>
+
+    <update id="completeRepair">
+        UPDATE dormitory_repair
+        SET status = 'COMPLETED',
+            remark = #{remark},
+            handle_images = #{handleImages},
+            handle_time = CURRENT_TIMESTAMP,
+            update_time = CURRENT_TIMESTAMP
+        WHERE id = #{id}
+          AND status = 'PROCESSING'
+    </update>
+
+    <update id="updateBuildingAndCampus">
+        UPDATE dormitory_repair
+        SET building = #{newBuilding},
+            campus = #{campus},
+            update_time = CURRENT_TIMESTAMP
+        WHERE building = #{oldBuilding}
+    </update>
+
+</mapper>

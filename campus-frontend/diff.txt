@@ -1,0 +1,968 @@
+Note: The tool simplified the command to ` cd /Users/caspar/Documents/IdeaProjects/NewOSPFU && git diff HEAD -- campus-frontend/src/views/Navigation.vue`, and this is the output of running that command instead:
+                                                                                
++    clarificationRequired.value = true
++    clarificationMessage.value = result.message || '请先确认校区'
++    clarificationOptions.value = result.clarificationOptions || []
++    destinationCandidates.value = []
++    agentSummary.value = meta.summary || clarificationMessage.value
++    reasoning.value = ''
++    followUpSuggestions.value = []
++    navStore.setClarification({ query: meta.query, options: clarificationOption
+s                                                                               +.value, message: clarificationMessage.value })                                 
+     navState.value = 'idle'                                                    +    return
+   }
+ 
+-  if (searchKeyword.value) {
+-    const keyword = searchKeyword.value.toLowerCase()
+-    result = result.filter(
+-      (poi) =>
+-        poi.name.toLowerCase().includes(keyword) ||
+-        (poi.description && poi.description.toLowerCase().includes(keyword))
+-    )
++  clearClarification()
++  if (!result.success || !result.place) {
++    navState.value = 'idle'
++    ElMessage.warning(result.message || '未找到相关地点')
++    return
+   }
+ 
+-  return result
+-})
+-
+-// 导航提示
+-const navModeTip = computed(() => {
+-  if (navSelectionStep.value === 0) {
+-    return '请在地图上点击选择起点，或从下方列表选择'
++  syncResolvedDestination(result.place, meta.query)
++  destinationCandidates.value = (result.places || result.candidates || []).map(
+p                                                                               +lace => ({                                                                     
+     ...place,                                                                  +    lat: Number(place.lat),
++    lng: Number(place.lng)
++  }))
++  agentSummary.value = meta.summary || result.message || `已为您识别目的地【${r
+e                                                                               +sult.place.name}】`                                                            
+   reasoning.value = result.message || ''                                       +  followUpSuggestions.value = meta.suggestions?.length ? meta.suggestions : bui
+l                                                                               +dContextualSuggestions({ destination: result.place.name })                     
+                                                                                +  if (userLocation.value) {
++    await useCurrentLocationAsStart()
++  } else {
++    startPoint.value = null
++    startPointName.value = ''
++    currentRoute.value = null
++    navState.value = 'idle'
++    ElMessage.info('已定位目的地，请使用当前位置或在地图上选择起点')
+   }
+-  return '请在地图上点击选择终点，或从下方列表选择'
+-})
+-
+-// 获取分类文本
+-const getCategoryText = (category: PoiCategory): string => {
+-  return CATEGORY_MAP[category]?.text || category
+ }
+ 
+-// 获取分类颜色
+-const getCategoryColor = (category: PoiCategory): string => {
+-  return CATEGORY_MAP[category]?.color || '#909399'
++const resolvePlace = async (query: string, campus?: string, meta: { summary?: s
+t                                                                               +ring; suggestions?: string[]; source?: string } = {}) => {                     
+   navState.value = 'loading'                                                   +  const res = await navigationApi.resolvePlace({
++    keyword: query,
++    campus,
++    userLat: userLocation.value?.lat,
++    userLng: userLocation.value?.lng
++  })
++  await applyResolveResult(res.data, { query, ...meta })
+ }
+ 
+-// 获取分类图标
+-const getCategoryIcon = (category: PoiCategory) => {
+-  const iconName = CATEGORY_MAP[category]?.icon || 'building'
+-  return iconMap[iconName] || House
+-}
+-
+-// 加载 POI 数据
+-const loadPois = async () => {
+-  poiLoading.value = true
+-  try {
+-    const res = await navigationApi.getPois()
+-    pois.value = res.data || []
+-  } catch (error) {
+-    console.error('加载POI失败:', error)
+-  } finally {
+-    poiLoading.value = false
++const useCurrentLocationAsStart = async () => {
++  if (!resolvedDestination.value) return
++  if (!userLocation.value) {
++    await mapRef.value?.handleLocate()
++    if (!userLocation.value) {
++      ElMessage.warning('请先授权定位，或在地图上手动选择起点')
++      return
++    }
+   }
++  startPoint.value = { lat: userLocation.value.lat, lng: userLocation.value.lng
+,                                                                               + name: '当前位置' }                                                            
+   startPointName.value = '当前位置'                                            +  await handleCalculateRoute()
+ }
+ 
+-// 刷新地图
+-const handleRefresh = () => {
+-  mapRef.value?.handleReload()
+-  loadPois()
+-}
++const handleNaturalSubmit = async () => {
++  const text = naturalInput.value.trim()
++  if (!text) return
+ 
+-// 分类筛选
+-const handleCategoryChange = () => {
+-  // 重新筛选在 computed 中处理
+-}
++  submitting.value = true
++  try {
++    const context = userLocation.value
++      ? {
++          userLat: userLocation.value.lat,
++          userLng: userLocation.value.lng,
++          currentLat: userLocation.value.lat,
++          currentLng: userLocation.value.lng
++        }
++      : null
++    const data = await agentStore.sendMessage(text, context)
++    if (!data) throw new Error('无响应')
++
++    if (data.followUpType || data.askFor === 'campus') {
++      clarificationRequired.value = true
++      clarificationMessage.value = data.reply || '请先确认校区'
++      clarificationOptions.value = data.followUpOptions || []
++      agentSummary.value = data.reply || ''
++      currentQuery.value = text
++      navState.value = 'idle'
++      return
++    }
+ 
+-// 搜索
+-const handleSearch = () => {
+-  // 重新筛选在 computed 中处理
+-}
++    const routeCard = (data.cards || []).find((c: any) => c.type === 'ROUTE')
++    if (routeCard?.data) {
++      await applyTaskPayload(routeCard.data, data.followUpSuggestions || [], 'a
+g                                                                               +ent')                                                                          
+       return                                                                   +    }
+ 
+-// 切换导航模式
+-const toggleNavigationMode = () => {
+-  if (isNavigating.value) {
+-    // 取消导航
+-    isNavigating.value = false
+-    navSelectionStep.value = 0
+-    startPoint.value = null
+-    endPoint.value = null
+-    startPointName.value = ''
+-    endPointName.value = ''
+-    currentRoute.value = null
+-    showRoutePanel.value = false
+-    mapRef.value?.clearRoute()
+-    ElMessage.info('已取消导航')
+-  } else {
+-    // 开始导航
+-    isNavigating.value = true
+-    navSelectionStep.value = 0
+-    showRoutePanel.value = true
+-    ElMessage.info('请选择起点')
++    ElMessage.info(data.reply ? data.reply.substring(0, 80) : '请继续补充信息')
++    navState.value = 'idle'
++  } catch (e) {
++    ElMessage.error('路线规划失败，请重试')
++    navState.value = 'idle'
++  } finally {
++    submitting.value = false
+   }
+ }
+ 
+-// 处理地图选点
+-const handlePointSelected = (data: { type: string; lat: number; lng: number; na
+me: string }) => {                                                              -  if (data.type === 'start') {
+-    startPoint.value = { lat: data.lat, lng: data.lng, name: data.name }
+-    startPointName.value = data.name
+-    navSelectionStep.value = 1
+-    ElMessage.success(`已选择起点: ${data.name}，请选择终点`)
+-  } else if (data.type === 'end') {
+-    endPoint.value = { lat: data.lat, lng: data.lng, name: data.name }
+-    endPointName.value = data.name
++const applyTaskPayload = async (payload: AgentNavigationPayload, suggestions: s
+t                                                                               +ring[] = [], source = 'agent') => {                                            
+   isFromAgent.value = source === 'agent'                                       +  travelMode.value = (payload.mode as 'walking' | 'cycling') || 'walking'
++  agentSummary.value = payload.agentSummary || ''
++  reasoning.value = payload.reasoning || ''
++  followUpSuggestions.value = suggestions.length ? suggestions : buildContextua
+l                                                                               +Suggestions(payload)                                                           
+   activeCampus.value = payload.campus || ''                                    +
++  if (payload.clarificationRequired) {
++    clarificationRequired.value = true
++    clarificationMessage.value = payload.agentSummary || '请先确认校区'
++    clarificationOptions.value = payload.clarificationOptions || []
++    destinationCandidates.value = []
++    currentQuery.value = payload.destinationText || payload.destination || natu
+r                                                                               +alInput.value                                                                  
+     navState.value = 'idle'                                                    +    return
++  }
+ 
+-    // 自动计算路径
+-    if (startPoint.value) {
+-      handleCalculateRoute()
+-    } else {
+-      ElMessage.success(`已选择终点: ${data.name}，请选择起点`)
++  clearClarification()
++
++  const place: ResolvedPlace | null = payload.destLat != null && payload.destLn
+g                                                                               + != null                                                                       
+     ? {                                                                        +        name: payload.destination || payload.destinationText || '',
++        address: payload.destinationAddress,
++        lat: Number(payload.destLat),
++        lng: Number(payload.destLng),
++        campus: payload.campus,
++        source: payload.resolutionSource
++      }
++    : null
++
++  syncResolvedDestination(place, payload.destinationText || payload.destination
+)                                                                               +  destinationCandidates.value = (payload.destinationOptions || payload.candidat
+e                                                                               +s || []).map(place => ({                                                       
+     ...place,                                                                  +    lat: Number(place.lat),
++    lng: Number(place.lng)
++  }))
++
++  if (payload.originLat != null && payload.originLng != null) {
++    startPoint.value = { lat: Number(payload.originLat), lng: Number(payload.or
+i                                                                               +ginLng), name: payload.origin || '当前位置' }                                  
+     startPointName.value = payload.origin || '当前位置'                        +  }
++
++  if (payload.routeReady && payload.path?.length) {
++    currentRoute.value = {
++      distance: payload.distance || 0,
++      duration: payload.duration || 0,
++      steps: payload.steps || [],
++      path: payload.path || []
+     }
++    navState.value = 'ready'
++    await nextTick()
++    if (startPoint.value && endPoint.value) {
++      await mapRef.value?.calculateRoute(startPoint.value.lat, startPoint.value
+.                                                                               +lng, endPoint.value.lat, endPoint.value.lng)                                   
+     }                                                                          +    return
+   }
+-}
+ 
+-// 启用起点选择模式
+-const enableStartSelect = () => {
+-  isNavigating.value = true
+-  navSelectionStep.value = 0
+-  showRoutePanel.value = true
+-  ElMessage.info('请在地图上点击选择起点')
++  if (place && userLocation.value) {
++    await useCurrentLocationAsStart()
++  } else {
++    navState.value = 'idle'
++  }
+ }
+ 
+-// 启用终点选择模式
+-const enableEndSelect = () => {
+-  isNavigating.value = true
+-  navSelectionStep.value = 1
+-  showRoutePanel.value = true
+-  ElMessage.info('请在地图上点击选择终点')
++const handleModeChange = async () => {
++  navStore.setPreferredMode(travelMode.value)
++  if (startPoint.value && endPoint.value) {
++    await handleCalculateRoute()
++  }
+ }
+ 
+-// 清除起点
+-const clearStartPoint = () => {
+-  startPoint.value = null
+-  startPointName.value = ''
+-  navSelectionStep.value = 0
++const handleRouteCalculated = (route: RouteResponse) => {
++  currentRoute.value = route
++  navState.value = 'ready'
+ }
+ 
+-// 清除终点
+-const clearEndPoint = () => {
+-  endPoint.value = null
+-  endPointName.value = ''
++const handleLocationChanged = (loc: UserLocation) => {
++  userLocation.value = loc
++  navStore.setUserLocation(loc)
+ }
+ 
+-// 处理选择导航点
+-const handleSelectNavPoint = (poi: Poi) => {
+-  if (!isNavigating.value) return
+-
+-  if (navSelectionStep.value === 0) {
+-    startPoint.value = { lat: poi.latitude, lng: poi.longitude, name: poi.name 
+}                                                                               -    startPointName.value = poi.name
+-    navSelectionStep.value = 1
+-    ElMessage.success(`已选择起点: ${poi.name}，请选择终点`)
+-  } else {
+-    endPoint.value = { lat: poi.latitude, lng: poi.longitude, name: poi.name }
+-    endPointName.value = poi.name
+-    // 自动计算路径
+-    handleCalculateRoute()
++const handlePointSelected = (data: { type: string; lat: number; lng: number; na
+m                                                                               +e: string }) => {                                                              
+   if (data.type === 'start') {                                                 +    startPoint.value = { lat: data.lat, lng: data.lng, name: data.name }
++    startPointName.value = data.name
++    isSelectingPoint.value = false
++    if (endPoint.value) handleCalculateRoute()
++    return
+   }
++  endPoint.value = { lat: data.lat, lng: data.lng, name: data.name }
++  endPointName.value = data.name
++  resolvedDestination.value = { name: data.name, lat: data.lat, lng: data.lng }
++  isSelectingPoint.value = false
++  if (startPoint.value) handleCalculateRoute()
+ }
+ 
+-// 计算路径
+ const handleCalculateRoute = async () => {
+-  if (!startPoint.value || !endPoint.value) return
+-
+-  routeLoading.value = true
++  if (!endPoint.value) {
++    ElMessage.warning('请先确认目的地')
++    return
++  }
++  if (!startPoint.value) {
++    ElMessage.warning('请先选择起点')
++    return
++  }
+ 
++  navState.value = 'loading'
+   try {
+-    await mapRef.value?.calculateRoute(
+-      startPoint.value.lat,
+-      startPoint.value.lng,
+-      endPoint.value.lat,
+-      endPoint.value.lng
+-    )
+-  } catch (error) {
+-    console.error('路径计算失败:', error)
+-  } finally {
+-    routeLoading.value = false
++    await mapRef.value?.calculateRoute(startPoint.value.lat, startPoint.value.l
+n                                                                               +g, endPoint.value.lat, endPoint.value.lng)                                     
+   } catch (e) {                                                                +    navState.value = 'idle'
++    ElMessage.error('路线规划失败，请重试')
+   }
+ }
+ 
+-// 处理路径计算结果
+-const handleRouteCalculated = (route: RouteResponse) => {
+-  currentRoute.value = route
+-  showRoutePanel.value = true
++const startSelectStart = () => {
++  selectingType.value = 'start'
++  isSelectingPoint.value = true
+ }
+ 
+-// 清除路径
+-const clearRoute = () => {
+-  startPoint.value = null
+-  endPoint.value = null
+-  startPointName.value = ''
+-  endPointName.value = ''
+-  currentRoute.value = null
+-  navSelectionStep.value = 0
+-  isNavigating.value = false
+-  showRoutePanel.value = false
+-  mapRef.value?.clearRoute()
++const cancelSelect = () => {
++  isSelectingPoint.value = false
+ }
+ 
+-// 定位
+-const handleLocate = () => {
+-  mapRef.value?.handleLocate()
++const applySceneTag = (scene: { label: string; text: string }) => {
++  naturalInput.value = scene.text
++  handleNaturalSubmit()
+ }
+ 
+-// 附近搜索
+-const handleNearbySearch = async () => {
+-  if (!userLocation.value) {
+-    ElMessage.warning('请先点击"我的位置"获取当前位置')
+-    return
+-  }
+-
+-  nearbyLoading.value = true
+-  showNearbyPanel.value = true
++const applySuggestion = (text: string) => {
++  naturalInput.value = text
++  handleNaturalSubmit()
++}
+ 
+-  try {
+-    const result = await mapRef.value?.searchNearby(
+-      userLocation.value.lat,
+-      userLocation.value.lng,
+-      500
+-    )
+-    nearbyPois.value = result || []
+-  } catch (error) {
+-    console.error('附近搜索失败:', error)
+-  } finally {
+-    nearbyLoading.value = false
++const selectCandidate = async (place: ResolvedPlace) => {
++  clearClarification()
++  destinationCandidates.value = destinationCandidates.value
++  syncResolvedDestination(place, place.name)
++  agentSummary.value = `已切换为【${place.name}】`
++  reasoning.value = place.campus ? `当前选中地点位于${place.campus}` : ''
++  if (userLocation.value) {
++    await useCurrentLocationAsStart()
++  } else {
++    navState.value = 'idle'
+   }
+ }
+ 
+-// 位置变化处理
+-const handleLocationChanged = (location: UserLocation) => {
+-  userLocation.value = location
++const selectClarification = async (campus: string) => {
++  clearClarification()
++  if (currentQuery.value) {
++    await resolvePlace(currentQuery.value, campus, {
++      summary: `已按您选择的${campus}继续解析导航需求`,
++      source: isFromAgent.value ? 'agent' : 'page'
++    })
++  }
+ }
+ 
+-// POI 点击处理
+-const handlePoiClick = (poi: Poi) => {
+-  selectedPoi.value = poi
+-  mapRef.value?.focusOnPoi(poi)
+-  showDetail.value = true
++const resetToIdle = () => {
++  navState.value = 'idle'
++  naturalInput.value = ''
++  agentSummary.value = ''
++  reasoning.value = ''
++  followUpSuggestions.value = []
++  startPoint.value = null
++  endPoint.value = null
++  currentRoute.value = null
++  resolvedDestination.value = null
++  destinationCandidates.value = []
++  startPointName.value = ''
++  endPointName.value = ''
++  activeCampus.value = ''
++  clearClarification()
++  isSelectingPoint.value = false
++  mapRef.value?.clearRoute()
+ }
+ 
+-// 导航到指定位置
+-const handleNavigateTo = () => {
+-  if (!selectedPoi.value) return
+-
+-  if (!isNavigating.value) {
+-    // 如果不在导航模式，开启导航
+-    isNavigating.value = true
+-    navSelectionStep.value = 0
+-    showRoutePanel.value = true
++onMounted(async () => {
++  const pending = navStore.consumePendingTask()
++  if (pending) {
++    naturalInput.value = pending.destinationText || pending.destination || ''
++    await applyTaskPayload(pending, [], pending.source || 'agent')
++    return
+   }
+ 
+-  // 将选中地点设为终点
+-  endPoint.value = {
+-    lat: selectedPoi.value.latitude,
+-    lng: selectedPoi.value.longitude,
+-    name: selectedPoi.value.name
++  if (navStore.userLocation) {
++    userLocation.value = navStore.userLocation
+   }
+-  endPointName.value = selectedPoi.value.name
+-
+-  if (startPoint.value && endPoint.value) {
+-    handleCalculateRoute()
+-  } else if (!startPoint.value) {
+-    ElMessage.success(`已选择终点: ${selectedPoi.value.name}，请选择起点`)
++  if (navStore.preferredMode) {
++    travelMode.value = navStore.preferredMode
+   }
+-
+-  showDetail.value = false
+-}
+-
+-// 生命周期
+-onMounted(() => {
+-  loadPois()
+ })
+ </script>
+ 
+ <style scoped>
+-.navigation-page {
+-  height: calc(100vh - 120px);
+-  display: flex;
+-  flex-direction: column;
+-  gap: 16px;
+-}
+-
+-.page-header {
+-  display: flex;
+-  justify-content: space-between;
+-  align-items: center;
+-}
+-
+-.page-header h2 {
+-  margin: 0;
+-  font-size: 20px;
+-  color: #333;
+-}
+-
+-/* 功能卡片 */
+-.filter-card {
+-  flex-shrink: 0;
+-}
+-
+-.category-option {
+-  display: flex;
+-  align-items: center;
+-  gap: 8px;
+-}
+-
+-.category-dot {
+-  width: 12px;
+-  height: 12px;
+-  border-radius: 50%;
+-}
+-
+-/* 主内容区 */
+-.main-content {
+-  flex: 1;
+-  display: flex;
+-  gap: 16px;
+-  min-height: 0;
+-}
+-
+-.map-section {
+-  flex: 1;
++.nav-page {
+   position: relative;
+-  min-width: 0;
+-}
+-
+-.info-section {
+-  width: 400px;
+-  flex-shrink: 0;
+-  display: flex;
+-  flex-direction: column;
+-  gap: 16px;
++  height: calc(100vh - 60px);
+   overflow: hidden;
++  background: #f0f2f5;
+ }
+-
+-/* 导航模式提示 */
+-.nav-mode-tip {
++.top-bar {
+   position: absolute;
+-  top: 16px;
+-  left: 320px;
+-  z-index: 1000;
+-  max-width: 300px;
+-}
+-
+-/* 路径规划面板 */
+-.route-panel {
+-  max-height: 450px;
+-  overflow: hidden;
++  top: 12px;
++  left: 12px;
++  right: 12px;
++  z-index: 100;
++  background: rgba(255, 255, 255, 0.96);
++  border-radius: 12px;
++  padding: 12px 14px;
++  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+   display: flex;
+   flex-direction: column;
+-}
+-
+-.route-panel :deep(.el-card__body) {
+-  flex: 1;
+-  overflow-y: auto;
+-}
+-
+-.panel-header {
+-  display: flex;
+-  justify-content: space-between;
+-  align-items: center;
+-}
+-
+-.route-form {
+-  padding: 4px 0;
+-}
+-
+-.route-input {
+-  margin-bottom: 12px;
+-}
+-
+-.input-label {
++  gap: 10px;
++}
++.input-row { display: flex; gap: 8px; align-items: center; }
++.nl-input { flex: 1; }
++.scene-tags { display: flex; gap: 6px; flex-wrap: wrap; }
++.scene-tag { cursor: pointer; }
++.mode-row { display: flex; align-items: center; gap: 10px; }
++.map-area { position: absolute; inset: 0; z-index: 1; }
++.select-tip-bar {
++  position: absolute;
++  bottom: 24px;
++  left: 50%;
++  transform: translateX(-50%);
++  z-index: 50;
++  background: rgba(0, 65, 145, 0.92);
++  color: #fff;
++  padding: 8px 20px;
++  border-radius: 20px;
++  font-size: 13px;
+   display: flex;
+   align-items: center;
+   gap: 8px;
+-  margin-bottom: 6px;
+-  font-size: 14px;
+-  font-weight: 500;
+-  color: #333;
+ }
+-
+-.label-dot {
+-  width: 10px;
+-  height: 10px;
+-  border-radius: 50%;
+-}
+-
+-.label-dot.start {
+-  background: #67C23A;
+-}
+-
+-.label-dot.end {
+-  background: #F56C6C;
+-}
+-
+-.calc-route-btn {
+-  width: 100%;
+-  margin-top: 8px;
+-}
+-
+-.route-stats {
+-  display: flex;
+-  gap: 24px;
+-  justify-content: center;
+-  padding: 12px 0;
+-}
+-
+-.stat-item {
+-  display: flex;
+-  align-items: center;
+-  gap: 6px;
+-  color: #666;
+-}
+-
+-.stat-item .el-icon {
+-  color: #409eff;
+-}
+-
+-/* 路径步骤 */
+-.route-steps {
+-  max-height: 180px;
+-  overflow-y: auto;
+-}
+-
+-.route-step {
+-  display: flex;
+-  gap: 12px;
+-  padding: 8px 0;
+-}
+-
+-.step-number {
+-  width: 24px;
+-  height: 24px;
+-  background: #409eff;
+-  color: white;
+-  border-radius: 50%;
+-  display: flex;
+-  align-items: center;
+-  justify-content: center;
+-  font-size: 12px;
+-  flex-shrink: 0;
+-}
+-
+-.step-content {
+-  flex: 1;
+-}
+-
+-.step-instruction {
+-  font-size: 13px;
+-  color: #333;
+-  line-height: 1.4;
+-}
+-
+-.step-info {
+-  font-size: 12px;
+-  color: #999;
+-  margin-top: 2px;
+-}
+-
+-/* 附近搜索面板 */
+-.nearby-panel {
+-  max-height: 300px;
+-  overflow: hidden;
++.loading-overlay {
++  position: absolute;
++  inset: 0;
++  z-index: 60;
++  background: rgba(255, 255, 255, 0.7);
+   display: flex;
+   flex-direction: column;
+-}
+-
+-.nearby-panel :deep(.el-card__body) {
+-  flex: 1;
+-  overflow-y: auto;
+-}
+-
+-.nearby-list {
+-  min-height: 100px;
+-}
+-
+-.nearby-item {
+-  display: flex;
+-  align-items: center;
+-  gap: 12px;
+-  padding: 10px;
+-  border-radius: 8px;
+-  cursor: pointer;
+-  transition: background 0.2s;
+-}
+-
+-.nearby-item:hover {
+-  background: #f5f7fa;
+-}
+-
+-.nearby-icon {
+-  width: 40px;
+-  height: 40px;
+-  border-radius: 8px;
+-  display: flex;
+   align-items: center;
+   justify-content: center;
+-  color: white;
+-}
+-
+-.nearby-info {
+-  flex: 1;
+-}
+-
+-.nearby-name {
+-  font-size: 14px;
+-  font-weight: 500;
+-  color: #333;
+-}
+-
+-.nearby-meta {
+-  margin-top: 4px;
+-}
+-
+-.nearby-meta .el-tag {
+-  color: white;
+-  border: none;
+-}
+-
+-/* POI 列表 */
+-.poi-list-card {
+-  flex: 1;
+-  min-height: 200px;
+-  overflow: hidden;
+-  display: flex;
+-  flex-direction: column;
+-}
+-
+-.poi-list-card :deep(.el-card__body) {
+-  flex: 1;
+-  overflow-y: auto;
+-}
+-
+-.poi-list {
+-  padding: 4px;
+-}
+-
+-.poi-item {
+-  display: flex;
+-  align-items: center;
+   gap: 12px;
+-  padding: 12px;
+-  border-radius: 8px;
+-  cursor: pointer;
+-  transition: background 0.2s;
+-}
+-
+-.poi-item:hover {
+-  background: #f5f7fa;
+-}
+-
+-.poi-item.active {
+-  background: #ecf5ff;
+-}
+-
+-.poi-icon {
+-  width: 40px;
+-  height: 40px;
+-  border-radius: 8px;
+-  display: flex;
+-  align-items: center;
+-  justify-content: center;
+-  color: white;
+-  flex-shrink: 0;
+-}
+-
+-.poi-info {
+-  flex: 1;
+-  min-width: 0;
+-}
+-
+-.poi-name {
+   font-size: 14px;
+-  font-weight: 500;
+-  color: #333;
+-  margin-bottom: 4px;
++  color: #606266;
+ }
+-
+-.poi-desc {
+-  font-size: 12px;
+-  color: #999;
+-  overflow: hidden;
+-  text-overflow: ellipsis;
+-  white-space: nowrap;
+-  margin-bottom: 4px;
+-}
+-
+-.poi-meta {
++.route-panel {
++  position: absolute;
++  top: 146px;
++  right: 12px;
++  width: 330px;
++  max-height: calc(100vh - 170px);
++  z-index: 90;
++  background: #fff;
++  border-radius: 12px;
++  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
++  overflow-y: auto;
+   display: flex;
+-  align-items: center;
+-  gap: 8px;
+-}
+-
+-.poi-floor {
+-  font-size: 12px;
+-  color: #999;
+-}
+-
+-/* 详情弹窗 */
+-.place-detail .detail-image {
+-  margin-bottom: 16px;
+-  border-radius: 8px;
+-  overflow: hidden;
+-}
+-
+-.place-detail .detail-image img {
+-  width: 100%;
+-  max-height: 200px;
+-  object-fit: cover;
+-}
+-
+-/* 响应式 */
+-@media (max-width: 1200px) {
+-  .info-section {
+-    width: 350px;
+-  }
+-}
+-
+-@media (max-width: 992px) {
+-  .main-content {
+-    flex-direction: column;
+-  }
+-
+-  .map-section {
+-    height: 50vh;
+-    flex: none;
+-  }
+-
+-  .info-section {
+-    width: 100%;
+-    flex: 1;
+-    overflow-y: auto;
+-  }
+-
+-  .nav-mode-tip {
+-    left: 16px;
+-    top: 60px;
+-  }
++  flex-direction: column;
+ }
+-</style>
++.route-summary {
++  background: linear-gradient(135deg, #004191 0%, #1a5cb8 100%);
++  padding: 16px;
++  color: #fff;
++}
++.summary-title { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
++.agent-summary-text { font-size: 13px; line-height: 1.6; margin-bottom: 10px; }
++.reasoning-text { font-size: 12px; color: rgba(255,255,255,0.85); line-height: 
+1                                                                               +.5; margin-bottom: 12px; }                                                     
+ .od-row { display: flex; flex-direction: column; gap: 8px; }                   +.od-point { display: flex; align-items: center; gap: 8px; }
++.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
++.dot-start { background: #67c23a; }
++.dot-end { background: #ffd04b; }
++.od-line { margin-left: 3px; width: 2px; height: 18px; background: rgba(255,255
+,                                                                               +255,0.35); }                                                                   
+ .od-name { font-size: 14px; }                                                  +.stats-row { margin-top: 12px; display: flex; align-items: center; gap: 8px; }
++.stat-item { display: inline-flex; align-items: center; gap: 4px; font-size: 13
+p                                                                               +x; }                                                                           
+ .stat-sep { opacity: 0.7; }                                                    +.clarify-section, .candidate-section, .actions-section, .steps-section, .sugges
+t                                                                               +ions-section { padding: 14px 16px; border-top: 1px solid #eef2f6; }            
+ .section-title, .steps-header { font-size: 14px; font-weight: 600; color: #30313                                                                               +3; display: flex; align-items: center; justify-content: space-between; }       
+ .clarify-text { margin-top: 8px; color: #606266; line-height: 1.6; font-size: 13                                                                               +px; }                                                                          
+ .clarify-options, .action-buttons, .suggestions-list { margin-top: 10px; display                                                                               +: flex; flex-wrap: wrap; gap: 8px; }                                           
+ .candidate-list { margin-top: 10px; display: flex; flex-direction: column; gap:                                                                                +8px; }                                                                         
+ .candidate-item { border: 1px solid #e8eef5; border-radius: 8px; padding: 10px 1                                                                               +2px; cursor: pointer; transition: all 0.2s ease; }                             
+ .candidate-item:hover { border-color: #409eff; background: #f5f9ff; }          +.candidate-name { font-size: 13px; font-weight: 600; color: #303133; }
++.candidate-meta { margin-top: 4px; display: flex; flex-direction: column; gap: 
+2                                                                               +px; font-size: 12px; color: #909399; }                                         
+ .steps-section { min-height: 0; display: flex; flex-direction: column; }       +.steps-list { margin-top: 12px; display: flex; flex-direction: column; gap: 10p
+x                                                                               +; padding-right: 4px; }                                                        
+ .step-item { display: flex; gap: 10px; }                                       +.step-num { width: 22px; height: 22px; border-radius: 50%; background: #ecf5ff;
+                                                                                +color: #409eff; display: flex; align-items: center; justify-content: center; fo
+nt-size: 12px; font-weight: 600; }                                               .step-content { flex: 1; }                                                     +.step-instr { color: #303133; font-size: 13px; line-height: 1.5; }
++.step-meta { color: #909399; font-size: 12px; margin-top: 2px; }
++.suggestions-label { margin: 0; color: #606266; font-size: 13px; }
++.suggestion-tag { cursor: pointer; }
++.slide-right-enter-active, .slide-right-leave-active { transition: all 0.3s eas
+e                                                                               +; }                                                                            
+ .slide-right-enter-from, .slide-right-leave-to { opacity: 0; transform: translat                                                                               +eX(20px); }                                                                    
+ </style>                                                                       

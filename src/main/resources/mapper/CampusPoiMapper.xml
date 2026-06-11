@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.caspar.mapper.CampusPoiMapper">
+
+    <resultMap id="BaseResultMap" type="com.caspar.entity.CampusPoi">
+        <id column="id" property="id"/>
+        <result column="name" property="name"/>
+        <result column="category" property="category"/>
+        <result column="description" property="description"/>
+        <result column="latitude" property="latitude"/>
+        <result column="longitude" property="longitude"/>
+        <result column="floor" property="floor"/>
+        <result column="image_url" property="imageUrl"/>
+        <result column="open_time" property="openTime"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <!-- 通用查询条件 -->
+    <sql id="WhereClause">
+        <where>
+            <if test="category != null and category != ''">
+                AND category = #{category}
+            </if>
+            <if test="keyword != null and keyword != ''">
+                AND (name LIKE CONCAT('%', #{keyword}, '%') OR description LIKE CONCAT('%', #{keyword}, '%'))
+            </if>
+        </where>
+    </sql>
+
+    <!-- 分页查询 -->
+    <select id="selectList" resultMap="BaseResultMap">
+        SELECT * FROM campus_poi
+        <include refid="WhereClause"/>
+        ORDER BY id
+        LIMIT #{offset}, #{limit}
+    </select>
+
+    <!-- 统计数量 -->
+    <select id="count" resultType="java.lang.Long">
+        SELECT COUNT(*) FROM campus_poi
+        <include refid="WhereClause"/>
+    </select>
+
+    <!-- 根据ID查询 -->
+    <select id="findById" resultMap="BaseResultMap">
+        SELECT * FROM campus_poi WHERE id = #{id}
+    </select>
+
+    <!-- 附近搜索 - 使用Haversine公式计算球面距离 -->
+    <select id="findNearby" resultMap="BaseResultMap">
+        SELECT *,
+               (6371000 * acos(cos(radians(#{lat})) * cos(radians(latitude)) * cos(radians(longitude) - radians(#{lng})) + sin(radians(#{lat})) * sin(radians(latitude)))) AS distance
+        FROM campus_poi
+        WHERE (6371000 * acos(cos(radians(#{lat})) * cos(radians(latitude)) * cos(radians(longitude) - radians(#{lng})) + sin(radians(#{lat})) * sin(radians(latitude)))) <![CDATA[<=]]> #{radius}
+        ORDER BY distance
+    </select>
+
+    <!-- 根据类别查询 -->
+    <select id="findByCategory" resultMap="BaseResultMap">
+        SELECT * FROM campus_poi WHERE category = #{category}
+    </select>
+
+    <!-- 插入 -->
+    <insert id="insert" parameterType="com.caspar.entity.CampusPoi" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO campus_poi (name, category, description, latitude, longitude, location, floor, image_url, open_time)
+        VALUES (#{name}, #{category}, #{description}, #{latitude}, #{longitude},
+                ST_GeomFromText(CONCAT('POINT(', #{longitude}, ' ', #{latitude}, ')'), 4326),
+                #{floor}, #{imageUrl}, #{openTime})
+    </insert>
+
+    <!-- 更新 -->
+    <update id="update" parameterType="com.caspar.entity.CampusPoi">
+        UPDATE campus_poi
+        <set>
+            <if test="name != null">name = #{name},</if>
+            <if test="category != null">category = #{category},</if>
+            <if test="description != null">description = #{description},</if>
+            <if test="latitude != null">latitude = #{latitude},</if>
+            <if test="longitude != null">longitude = #{longitude},</if>
+            <if test="location != null">location = ST_GeomFromText(CONCAT('POINT(', #{longitude}, ' ', #{latitude}, ')'), 4326),</if>
+            <if test="floor != null">floor = #{floor},</if>
+            <if test="imageUrl != null">image_url = #{imageUrl},</if>
+            <if test="openTime != null">open_time = #{openTime},</if>
+        </set>
+        WHERE id = #{id}
+    </update>
+
+    <!-- 删除 -->
+    <delete id="deleteById">
+        DELETE FROM campus_poi WHERE id = #{id}
+    </delete>
+
+</mapper>

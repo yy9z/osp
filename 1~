@@ -1,0 +1,4 @@
+mysql: [Warning] Using a password on the command line interface can be insecure.
+mysql: [Warning] Using a password on the command line interface can be insecure.
+ERROR 1265 (01000) at line 5: Data truncated for column 'role' at row 1
+ERROR 1265 (01000) at line 5: Data truncated for column 'role' at row 1

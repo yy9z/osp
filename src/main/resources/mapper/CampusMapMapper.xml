@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.caspar.mapper.CampusMapMapper">
+
+    <resultMap id="BaseResultMap" type="com.caspar.entity.CampusMap">
+        <id column="id" property="id"/>
+        <result column="name" property="name"/>
+        <result column="center_lat" property="centerLat"/>
+        <result column="center_lng" property="centerLng"/>
+        <result column="zoom" property="zoom"/>
+        <result column="image_url" property="imageUrl"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id, name, center_lat, center_lng, zoom, image_url, create_time, update_time
+    </sql>
+
+    <select id="findDefault" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM campus_map
+        ORDER BY id ASC
+        LIMIT 1
+    </select>
+
+    <select id="findById" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM campus_map
+        WHERE id = #{id}
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO campus_map (name, center_lat, center_lng, zoom, image_url, create_time, update_time)
+        VALUES (#{name}, #{centerLat}, #{centerLng}, #{zoom}, #{imageUrl}, NOW(), NOW())
+    </insert>
+
+    <update id="update">
+        UPDATE campus_map
+        <set>
+            <if test="name != null">name = #{name},</if>
+            <if test="centerLat != null">center_lat = #{centerLat},</if>
+            <if test="centerLng != null">center_lng = #{centerLng},</if>
+            <if test="zoom != null">zoom = #{zoom},</if>
+            <if test="imageUrl != null">image_url = #{imageUrl},</if>
+            update_time = NOW()
+        </set>
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteById">
+        DELETE FROM campus_map WHERE id = #{id}
+    </delete>
+
+</mapper>

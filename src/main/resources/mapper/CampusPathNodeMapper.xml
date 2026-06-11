@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.caspar.mapper.CampusPathNodeMapper">
+
+    <resultMap id="BaseResultMap" type="com.caspar.entity.CampusPathNode">
+        <id column="id" property="id"/>
+        <result column="name" property="name"/>
+        <result column="latitude" property="latitude"/>
+        <result column="longitude" property="longitude"/>
+        <result column="node_type" property="nodeType"/>
+        <result column="poi_id" property="poiId"/>
+        <result column="create_time" property="createTime"/>
+    </resultMap>
+
+    <!-- 查询所有节点 -->
+    <select id="selectAll" resultMap="BaseResultMap">
+        SELECT * FROM campus_path_node
+    </select>
+
+    <!-- 根据ID查询 -->
+    <select id="findById" resultMap="BaseResultMap">
+        SELECT * FROM campus_path_node WHERE id = #{id}
+    </select>
+
+    <!-- 根据POI ID查询 -->
+    <select id="findByPoiId" resultMap="BaseResultMap">
+        SELECT * FROM campus_path_node WHERE poi_id = #{poiId}
+    </select>
+
+    <!-- 根据节点类型查询 -->
+    <select id="findByNodeType" resultMap="BaseResultMap">
+        SELECT * FROM campus_path_node WHERE node_type = #{nodeType}
+    </select>
+
+    <!-- 查找最近的节点（使用简单的欧氏距离计算） -->
+    <select id="findNearest" resultMap="BaseResultMap">
+        SELECT *,
+               SQRT(POW(latitude - #{lat}, 2) + POW(longitude - #{lng}, 2)) AS distance
+        FROM campus_path_node
+        ORDER BY distance
+        LIMIT 1
+    </select>
+
+    <!-- 插入 -->
+    <insert id="insert" parameterType="com.caspar.entity.CampusPathNode" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO campus_path_node (name, latitude, longitude, node_type, poi_id)
+        VALUES (#{name}, #{latitude}, #{longitude}, #{nodeType}, #{poiId})
+    </insert>
+
+    <!-- 更新 -->
+    <update id="update" parameterType="com.caspar.entity.CampusPathNode">
+        UPDATE campus_path_node
+        <set>
+            <if test="name != null">name = #{name},</if>
+            <if test="latitude != null">latitude = #{latitude},</if>
+            <if test="longitude != null">longitude = #{longitude},</if>
+            <if test="nodeType != null">node_type = #{nodeType},</if>
+            <if test="poiId != null">poi_id = #{poiId},</if>
+        </set>
+        WHERE id = #{id}
+    </update>
+
+    <!-- 删除 -->
+    <delete id="deleteById">
+        DELETE FROM campus_path_node WHERE id = #{id}
+    </delete>
+
+</mapper>

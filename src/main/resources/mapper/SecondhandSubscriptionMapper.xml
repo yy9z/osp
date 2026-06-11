@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.caspar.mapper.SecondhandSubscriptionMapper">
+
+    <resultMap id="BaseResultMap" type="com.caspar.entity.SecondhandSubscription">
+        <id column="id" property="id"/>
+        <result column="user_id" property="userId"/>
+        <result column="keyword" property="keyword"/>
+        <result column="category" property="category"/>
+        <result column="max_price" property="maxPrice"/>
+        <result column="campus" property="campus"/>
+        <result column="status" property="status"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+        <result column="last_notified_at" property="lastNotifiedAt"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.caspar.entity.SecondhandSubscription" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO secondhand_subscription (user_id, keyword, category, max_price, campus, status, create_time, update_time, last_notified_at)
+        VALUES (#{userId}, #{keyword}, #{category}, #{maxPrice}, #{campus}, #{status}, #{createTime}, #{updateTime}, #{lastNotifiedAt})
+    </insert>
+
+    <select id="selectByUserId" resultMap="BaseResultMap">
+        SELECT id, user_id, keyword, category, max_price, campus, status, create_time, update_time, last_notified_at
+        FROM secondhand_subscription
+        WHERE user_id = #{userId}
+        ORDER BY create_time DESC
+    </select>
+
+    <delete id="deleteByIdAndUserId">
+        DELETE FROM secondhand_subscription
+        WHERE id = #{id} AND user_id = #{userId}
+    </delete>
+
+    <update id="updateLastNotifiedAt">
+        UPDATE secondhand_subscription
+        SET last_notified_at = CURRENT_TIMESTAMP,
+            update_time = CURRENT_TIMESTAMP
+        WHERE id = #{id}
+    </update>
+
+    <select id="countSameActiveRule" resultType="int">
+        SELECT COUNT(*)
+        FROM secondhand_subscription
+        WHERE user_id = #{userId}
+          AND status = 'ACTIVE'
+          AND keyword = #{keyword}
+          AND (
+                (category IS NULL AND #{category} IS NULL)
+                OR category = #{category}
+              )
+          AND (
+                (max_price IS NULL AND #{maxPrice} IS NULL)
+                OR max_price = #{maxPrice}
+              )
+          AND (
+                (campus IS NULL AND #{campus} IS NULL)
+                OR campus = #{campus}
+              )
+    </select>
+
+    <select id="selectMatchedSubscriptions" resultMap="BaseResultMap">
+        SELECT id, user_id, keyword, category, max_price, campus, status, create_time, update_time, last_notified_at
+        FROM secondhand_subscription
+        <where>
+            status = 'ACTIVE'
+            AND user_id != #{sellerId}
+            AND (
+                #{goodsTitle} LIKE CONCAT('%', keyword, '%')
+                OR #{goodsDescription} LIKE CONCAT('%', keyword, '%')
+            )
+            AND (
+                category IS NULL OR category = '' OR category = #{goodsCategory}
+            )
+            AND (
+                max_price IS NULL OR max_price >= #{goodsPrice}
+            )
+            AND (
+                campus IS NULL OR campus = '' OR #{sellerCampus} IS NULL OR campus = #{sellerCampus}
+            )
+        </where>
+        ORDER BY create_time DESC
+    </select>
+
+</mapper>
+

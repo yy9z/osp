@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.caspar.mapper.AgentHistoryMapper">
+
+    <resultMap id="AgentLogResultMap" type="com.caspar.entity.AgentLogRecord">
+        <id column="id" property="id"/>
+        <result column="session_id" property="sessionId"/>
+        <result column="user_id" property="userId"/>
+        <result column="turn" property="turn"/>
+        <result column="user_input" property="userInput"/>
+        <result column="intent" property="intent"/>
+        <result column="slots" property="slots"/>
+        <result column="tools_used" property="toolsUsed"/>
+        <result column="response_payload" property="responsePayload"/>
+        <result column="reply" property="reply"/>
+        <result column="success" property="success"/>
+        <result column="error_msg" property="errorMsg"/>
+        <result column="cost_ms" property="costMs"/>
+        <result column="created_at" property="createdAt"/>
+    </resultMap>
+
+    <resultMap id="AgentSessionSummaryMap" type="com.caspar.agent.model.AgentSessionSummary">
+        <id column="session_id" property="sessionId"/>
+        <result column="title" property="title"/>
+        <result column="message_count" property="messageCount"/>
+        <result column="last_intent" property="lastIntent"/>
+        <result column="last_message" property="lastMessage"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <select id="findSessionOwner" resultType="java.lang.Long">
+        SELECT user_id
+        FROM agent_session
+        WHERE id = #{sessionId}
+        LIMIT 1
+    </select>
+
+    <insert id="upsertSession">
+        INSERT INTO agent_session (id, user_id, title, message_count, last_intent, created_at, updated_at)
+        VALUES (#{id}, #{userId}, #{title}, 0, #{lastIntent}, NOW(), NOW())
+        ON DUPLICATE KEY UPDATE
+            last_intent = VALUES(last_intent),
+            updated_at = NOW(),
+            title = IF(agent_session.title IS NULL OR agent_session.title = '', VALUES(title), agent_session.title)
+    </insert>
+
+    <update id="incrementSessionStats">
+        UPDATE agent_session
+        SET message_count = message_count + #{delta},
+            last_intent = #{lastIntent},
+            updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <insert id="insertLog" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO agent_log
+        (session_id, user_id, turn, user_input, intent, slots, tools_used, response_payload, reply, success, error_msg, cost_ms, created_at)
+        VALUES
+        (#{sessionId}, #{userId}, #{turn}, #{userInput}, #{intent}, #{slots}, #{toolsUsed}, #{responsePayload}, #{reply}, #{success}, #{errorMsg}, #{costMs}, NOW())
+    </insert>
+
+    <insert id="insertLogLegacy" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO agent_log
+        (session_id, user_id, turn, user_input, intent, slots, tools_used, reply, success, error_msg, cost_ms, created_at)
+        VALUES
+        (#{sessionId}, #{userId}, #{turn}, #{userInput}, #{intent}, #{slots}, #{toolsUsed}, #{reply}, #{success}, #{errorMsg}, #{costMs}, NOW())
+    </insert>
+
+    <select id="selectSessionSummaries" resultMap="AgentSessionSummaryMap">
+        SELECT s.id AS session_id,
+               s.title,
+               s.message_count,
+               s.last_intent,
+               s.updated_at,
+               l.reply AS last_message
+        FROM agent_session s
+        LEFT JOIN agent_log l
+          ON l.id = (
+              SELECT al.id
+              FROM agent_log al
+              WHERE al.session_id = s.id
+              ORDER BY al.id DESC
+              LIMIT 1
+          )
+        WHERE s.user_id = #{userId}
+        ORDER BY s.updated_at DESC
+        <if test="limit != null">
+            LIMIT #{limit}
+        </if>
+    </select>
+
+    <select id="selectSessionLogs" resultMap="AgentLogResultMap">
+        SELECT id, session_id, user_id, turn, user_input, intent, slots, tools_used, response_payload, reply, success, error_msg, cost_ms, created_at
+        FROM agent_log
+        WHERE user_id = #{userId}
+          AND session_id = #{sessionId}
+        ORDER BY id ASC
+        <if test="limit != null">
+            LIMIT #{limit}
+        </if>
+    </select>
+
+    <select id="selectSessionLogsLegacy" resultMap="AgentLogResultMap">
+        SELECT id, session_id, user_id, turn, user_input, intent, slots, tools_used, reply, success, error_msg, cost_ms, created_at
+        FROM agent_log
+        WHERE user_id = #{userId}
+          AND session_id = #{sessionId}
+        ORDER BY id ASC
+        <if test="limit != null">
+            LIMIT #{limit}
+        </if>
+    </select>
+
+    <delete id="deleteSessionLogs">
+        DELETE FROM agent_log
+        WHERE user_id = #{userId}
+          AND session_id = #{sessionId}
+    </delete>
+
+    <delete id="deleteSession">
+        DELETE FROM agent_session
+        WHERE user_id = #{userId}
+          AND id = #{sessionId}
+    </delete>
+</mapper>

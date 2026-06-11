@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.caspar.mapper.UserMapper">
+
+    <resultMap id="BaseResultMap" type="com.caspar.entity.User">
+        <id column="user_id" property="userId"/>
+        <result column="username" property="username"/>
+        <result column="password" property="password"/>
+        <result column="real_name" property="realName"/>
+        <result column="student_id" property="studentId"/>
+        <result column="phone" property="phone"/>
+        <result column="email" property="email"/>
+        <result column="role" property="role"/>
+        <result column="avatar" property="avatar"/>
+        <result column="bio" property="bio"/>
+        <result column="status" property="status"/>
+        <result column="managed_building_name" property="managedBuildingName"/>
+        <result column="create_time" property="createTime"/>
+    </resultMap>
+
+    <resultMap id="DormitoryAssignableUserResultMap" type="com.caspar.entity.dto.DormitoryAssignableUserVO">
+        <id column="user_id" property="userId"/>
+        <result column="username" property="username"/>
+        <result column="real_name" property="realName"/>
+        <result column="phone" property="phone"/>
+        <result column="role" property="role"/>
+        <result column="building" property="dormitoryBuilding"/>
+        <result column="room" property="dormitoryRoom"/>
+        <result column="bed" property="dormitoryBed"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        user_id, username, password, real_name, student_id, phone, email, role, avatar, bio, status, create_time
+    </sql>
+
+    <select id="findByUsername" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM user
+        WHERE username = #{username}
+    </select>
+
+    <select id="findById" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM user
+        WHERE user_id = #{userId}
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="userId">
+        INSERT INTO user (username, password, real_name, student_id, phone, email, role, avatar, bio, create_time)
+        VALUES (#{username}, #{password}, #{realName}, #{studentId}, #{phone}, #{email}, #{role}, #{avatar}, #{bio}, #{createTime})
+    </insert>
+
+    <update id="update">
+        UPDATE user
+        <set>
+            <if test="username != null">username = #{username},</if>
+            <if test="password != null">password = #{password},</if>
+            <if test="realName != null">real_name = #{realName},</if>
+            <if test="studentId != null">student_id = #{studentId},</if>
+            <if test="phone != null">phone = #{phone},</if>
+            <if test="email != null">email = #{email},</if>
+            <if test="role != null">role = #{role},</if>
+            <if test="avatar != null">avatar = #{avatar},</if>
+            <if test="bio != null">bio = #{bio},</if>
+            <if test="status != null">status = #{status},</if>
+        </set>
+        WHERE user_id = #{userId}
+    </update>
+
+    <update id="updatePassword">
+        UPDATE user
+        SET password = #{newPassword}
+        WHERE user_id = #{userId}
+    </update>
+
+    <delete id="deleteById">
+        DELETE FROM user WHERE user_id = #{userId}
+    </delete>
+
+    <select id="selectList" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>, dbm.managed_building_name
+        FROM user
+        LEFT JOIN (
+            SELECT manager_id, MIN(name) AS managed_building_name
+            FROM dorm_building
+            WHERE manager_id IS NOT NULL
+            GROUP BY manager_id
+        ) dbm ON dbm.manager_id = user.user_id
+        <where>
+            <if test="role != null and role != ''">
+                AND role = #{role}
+            </if>
+            <if test="keyword != null and keyword != ''">
+                AND (username LIKE CONCAT('%', #{keyword}, '%')
+                OR real_name LIKE CONCAT('%', #{keyword}, '%')
+                OR phone LIKE CONCAT('%', #{keyword}, '%')
+                OR email LIKE CONCAT('%', #{keyword}, '%'))
+            </if>
+        </where>
+        ORDER BY create_time DESC
+        LIMIT #{offset}, #{limit}
+    </select>
+
+    <select id="count" resultType="java.lang.Long">
+        SELECT COUNT(*)
+        FROM user
+        <where>
+            <if test="role != null and role != ''">
+                AND role = #{role}
+            </if>
+            <if test="keyword != null and keyword != ''">
+                AND (username LIKE CONCAT('%', #{keyword}, '%')
+                OR real_name LIKE CONCAT('%', #{keyword}, '%')
+                OR phone LIKE CONCAT('%', #{keyword}, '%')
+                OR email LIKE CONCAT('%', #{keyword}, '%'))
+            </if>
+        </where>
+    </select>
+
+    <select id="selectDormitoryAssignableUsers" resultMap="DormitoryAssignableUserResultMap">
+        SELECT u.user_id, u.username, u.real_name, u.phone, u.role,
+               ud.building, ud.room, ud.bed
+        FROM user u
+        LEFT JOIN user_dormitory ud ON ud.user_id = u.user_id
+        <where>
+            AND (
+                u.role IN ('STUDENT', 'TEACHER')
+                <if test="allowSelfDormManager != null and allowSelfDormManager">
+                    OR (u.user_id = #{operatorId} AND u.role = 'DORM_MANAGER')
+                </if>
+            )
+            <if test="keyword != null and keyword != ''">
+                AND (
+                    u.username LIKE CONCAT('%', #{keyword}, '%')
+                    OR u.real_name LIKE CONCAT('%', #{keyword}, '%')
+                    OR u.phone LIKE CONCAT('%', #{keyword}, '%')
+                )
+            </if>
+            <if test="assigned != null and assigned">
+                AND ud.user_id IS NOT NULL
+            </if>
+            <if test="assigned != null and !assigned">
+                AND ud.user_id IS NULL
+            </if>
+        </where>
+        ORDER BY u.create_time DESC
+        LIMIT #{offset}, #{limit}
+    </select>
+
+    <select id="countDormitoryAssignableUsers" resultType="java.lang.Long">
+        SELECT COUNT(*)
+        FROM user u
+        LEFT JOIN user_dormitory ud ON ud.user_id = u.user_id
+        <where>
+            AND (
+                u.role IN ('STUDENT', 'TEACHER')
+                <if test="allowSelfDormManager != null and allowSelfDormManager">
+                    OR (u.user_id = #{operatorId} AND u.role = 'DORM_MANAGER')
+                </if>
+            )
+            <if test="keyword != null and keyword != ''">
+                AND (
+                    u.username LIKE CONCAT('%', #{keyword}, '%')
+                    OR u.real_name LIKE CONCAT('%', #{keyword}, '%')
+                    OR u.phone LIKE CONCAT('%', #{keyword}, '%')
+                )
+            </if>
+            <if test="assigned != null and assigned">
+                AND ud.user_id IS NOT NULL
+            </if>
+            <if test="assigned != null and !assigned">
+                AND ud.user_id IS NULL
+            </if>
+        </where>
+    </select>
+
+    <select id="countByUsername" resultType="java.lang.Integer">
+        SELECT COUNT(*)
+        FROM user
+        WHERE username = #{username}
+    </select>
+
+    <select id="countByEmail" resultType="java.lang.Integer">
+        SELECT COUNT(*)
+        FROM user
+        WHERE email = #{email}
+    </select>
+
+    <select id="countByPhone" resultType="java.lang.Integer">
+        SELECT COUNT(*)
+        FROM user
+        WHERE phone = #{phone}
+    </select>
+
+</mapper>

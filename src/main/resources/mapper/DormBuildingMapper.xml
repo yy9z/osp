@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.caspar.mapper.DormBuildingMapper">
+
+    <resultMap id="BaseResultMap" type="com.caspar.entity.DormBuilding">
+        <id column="id" property="id"/>
+        <result column="name" property="name"/>
+        <result column="code" property="code"/>
+        <result column="campus" property="campus"/>
+        <result column="floors" property="floors"/>
+        <result column="rooms_per_floor" property="roomsPerFloor"/>
+        <result column="capacity_per_room" property="capacityPerRoom"/>
+        <result column="gender" property="gender"/>
+        <result column="manager_id" property="managerId"/>
+        <result column="manager_name" property="managerName"/>
+        <result column="create_time" property="createTime"/>
+    </resultMap>
+
+    <select id="selectAll" resultMap="BaseResultMap">
+        SELECT db.*, u.real_name AS manager_name
+        FROM dorm_building db
+        LEFT JOIN user u ON db.manager_id = u.user_id
+        ORDER BY db.code
+    </select>
+
+    <select id="findById" resultMap="BaseResultMap">
+        SELECT db.*, u.real_name AS manager_name
+        FROM dorm_building db
+        LEFT JOIN user u ON db.manager_id = u.user_id
+        WHERE db.id = #{id}
+    </select>
+
+    <select id="findByCode" resultMap="BaseResultMap">
+        SELECT db.*, u.real_name AS manager_name
+        FROM dorm_building db
+        LEFT JOIN user u ON db.manager_id = u.user_id
+        WHERE db.code = #{code}
+        LIMIT 1
+    </select>
+
+    <select id="findByName" resultMap="BaseResultMap">
+        SELECT db.*, u.real_name AS manager_name
+        FROM dorm_building db
+        LEFT JOIN user u ON db.manager_id = u.user_id
+        WHERE db.name = #{name}
+        LIMIT 1
+    </select>
+
+    <select id="findByManagerId" resultMap="BaseResultMap">
+        SELECT db.*, u.real_name AS manager_name
+        FROM dorm_building db
+        LEFT JOIN user u ON db.manager_id = u.user_id
+        WHERE db.manager_id = #{managerId}
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO dorm_building (name, code, campus, floors, rooms_per_floor, capacity_per_room, gender, manager_id)
+        VALUES (#{name}, #{code}, #{campus}, #{floors}, #{roomsPerFloor}, #{capacityPerRoom}, #{gender}, #{managerId})
+    </insert>
+
+    <update id="update">
+        UPDATE dorm_building
+        SET name = #{name},
+            code = #{code},
+            campus = #{campus},
+            floors = #{floors},
+            rooms_per_floor = #{roomsPerFloor},
+            capacity_per_room = #{capacityPerRoom},
+            gender = #{gender},
+            manager_id = #{managerId}
+        WHERE id = #{id}
+    </update>
+
+    <update id="clearManagerBinding">
+        UPDATE dorm_building
+        SET manager_id = NULL
+        WHERE manager_id = #{managerId}
+    </update>
+
+</mapper>

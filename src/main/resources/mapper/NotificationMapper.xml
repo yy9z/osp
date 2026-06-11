@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.caspar.mapper.NotificationMapper">
+
+    <!-- 基础列映射 -->
+    <resultMap id="BaseResultMap" type="com.caspar.entity.Notification">
+        <id column="id" property="id"/>
+        <result column="user_id" property="userId"/>
+        <result column="type" property="type"/>
+        <result column="title" property="title"/>
+        <result column="content" property="content"/>
+        <result column="related_id" property="relatedId"/>
+        <result column="related_type" property="relatedType"/>
+        <result column="create_time" property="createTime"/>
+    </resultMap>
+
+    <!-- 插入通知 -->
+    <insert id="insert" parameterType="com.caspar.entity.Notification" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO notification (user_id, type, title, content, related_id, related_type, create_time)
+        VALUES (#{userId}, #{type}, #{title}, #{content}, #{relatedId}, #{relatedType}, #{createTime})
+    </insert>
+
+    <!-- 查询当前用户最近的通知 -->
+    <select id="selectRecentNotificationsByUserId" resultMap="BaseResultMap">
+        SELECT id, user_id, type, title, content, related_id, related_type, create_time
+        FROM notification
+        WHERE user_id = #{userId}
+        ORDER BY create_time DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="countByUserAndRelatedAndTitle" resultType="int">
+        SELECT COUNT(*)
+        FROM notification
+        WHERE user_id = #{userId}
+          AND related_id = #{relatedId}
+          AND title = #{title}
+    </select>
+
+</mapper>

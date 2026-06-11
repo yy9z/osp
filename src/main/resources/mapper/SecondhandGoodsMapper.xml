@@ -1,0 +1,355 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.caspar.mapper.SecondhandGoodsMapper">
+
+    <!-- 基础列 -->
+    <sql id="Base_Column_List">
+        s.id, s.title, s.description, s.price, s.category, s.images,
+        s.condition, s.status, s.seller_id, s.view_count,
+        s.reject_reason, s.remove_reason, s.handler_id, s.handle_time,
+        s.create_time, s.update_time, s.deleted, s.deleted_by, s.deleted_at, s.delete_reason
+    </sql>
+
+    <!-- 关联查询列 -->
+    <sql id="Detail_Column_List">
+        s.id, s.title, s.description, s.price, s.category, s.images,
+        s.condition, s.status, s.seller_id, s.view_count,
+        s.reject_reason, s.remove_reason, s.handler_id, s.handle_time,
+        s.create_time, s.update_time,
+        u.username as seller_name, u.phone as seller_phone
+    </sql>
+
+    <!-- 结果映射 -->
+    <resultMap id="BaseResultMap" type="com.caspar.entity.SecondhandGoods">
+        <id column="id" property="id"/>
+        <result column="title" property="title"/>
+        <result column="description" property="description"/>
+        <result column="price" property="price"/>
+        <result column="category" property="category"/>
+        <result column="images" property="images"/>
+        <result column="condition" property="condition"/>
+        <result column="status" property="status" typeHandler="org.apache.ibatis.type.EnumTypeHandler"/>
+        <result column="seller_id" property="sellerId"/>
+        <result column="view_count" property="viewCount"/>
+        <result column="reject_reason" property="rejectReason"/>
+        <result column="remove_reason" property="removeReason"/>
+        <result column="handler_id" property="handlerId"/>
+        <result column="handle_time" property="handleTime"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+        <result column="deleted" property="deleted"/>
+        <result column="deleted_by" property="deletedBy"/>
+        <result column="deleted_at" property="deletedAt"/>
+        <result column="delete_reason" property="deleteReason"/>
+    </resultMap>
+
+    <!-- VO结果映射 -->
+    <resultMap id="VOResultMap" type="com.caspar.entity.dto.SecondhandGoodsVO">
+        <id column="id" property="id"/>
+        <result column="title" property="title"/>
+        <result column="description" property="description"/>
+        <result column="price" property="price"/>
+        <result column="category" property="category"/>
+        <result column="images" property="images"/>
+        <result column="condition" property="condition"/>
+        <result column="status" property="status" typeHandler="org.apache.ibatis.type.EnumTypeHandler"/>
+        <result column="seller_id" property="sellerId"/>
+        <result column="seller_name" property="sellerName"/>
+        <result column="seller_phone" property="sellerPhone"/>
+        <result column="view_count" property="viewCount"/>
+        <result column="reject_reason" property="rejectReason"/>
+        <result column="remove_reason" property="removeReason"/>
+        <result column="handler_id" property="handlerId"/>
+        <result column="handle_time" property="handleTime"/>
+        <result column="create_time" property="createTime"/>
+        <result column="deleted" property="deleted"/>
+        <result column="deleted_by" property="deletedBy"/>
+        <result column="deleted_at" property="deletedAt"/>
+        <result column="delete_reason" property="deleteReason"/>
+    </resultMap>
+
+    <!-- 插入商品 -->
+    <insert id="insert" parameterType="com.caspar.entity.SecondhandGoods" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO secondhand (title, description, price, category, images, `condition`, status, seller_id, view_count)
+        VALUES (#{title}, #{description}, #{price}, #{category}, #{images}, #{condition}, #{status}, #{sellerId}, #{viewCount})
+    </insert>
+
+    <!-- 更新商品 -->
+    <update id="update" parameterType="com.caspar.entity.SecondhandGoods">
+        UPDATE secondhand
+        <set>
+            <if test="title != null">title = #{title},</if>
+            <if test="description != null">description = #{description},</if>
+            <if test="price != null">price = #{price},</if>
+            <if test="category != null">category = #{category},</if>
+            <if test="images != null">images = #{images},</if>
+            <if test="condition != null">`condition` = #{condition},</if>
+            <if test="status != null">status = #{status},</if>
+            <if test="viewCount != null">view_count = #{viewCount},</if>
+        </set>
+        WHERE id = #{id}
+    </update>
+
+    <!-- 根据ID查询 -->
+    <select id="findById" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM secondhand s
+        WHERE s.id = #{id}
+    </select>
+
+    <!-- 查询商品详情（包含卖家信息） -->
+    <select id="findDetailById" resultMap="VOResultMap">
+        SELECT <include refid="Detail_Column_List"/>
+        FROM secondhand s
+        LEFT JOIN user u ON s.seller_id = u.user_id
+        WHERE s.id = #{id}
+    </select>
+
+    <!-- 查询商品列表 -->
+    <select id="selectList" resultMap="VOResultMap">
+        SELECT s.id, s.title, s.description, s.price, s.category, s.images,
+               s.condition, s.status, s.seller_id, s.view_count, s.create_time,
+               u.username as seller_name
+        FROM secondhand s
+        LEFT JOIN user u ON s.seller_id = u.user_id
+        LEFT JOIN (
+            SELECT goods_id, COUNT(*) AS favorite_count
+            FROM goods_favorite
+            GROUP BY goods_id
+        ) gf ON gf.goods_id = s.id
+        <where>
+            s.status = 'APPROVED'
+            AND (s.deleted = 0 OR s.deleted IS NULL)
+            <if test="category != null and category != ''">
+                AND s.category = #{category}
+            </if>
+            <if test="keyword != null and keyword != ''">
+                AND (s.title LIKE CONCAT('%', #{keyword}, '%') OR s.description LIKE CONCAT('%', #{keyword}, '%'))
+            </if>
+        </where>
+        <choose>
+            <when test="sort == 'smart'">
+                ORDER BY (
+                    IFNULL(gf.favorite_count, 0) * 6
+                    + LEAST(IFNULL(s.view_count, 0), 300) * 0.08
+                    + CASE s.`condition`
+                        WHEN 'NEW' THEN 8
+                        WHEN 'LIKE_NEW' THEN 5
+                        WHEN 'GOOD' THEN 2
+                        ELSE 0
+                      END
+                    + GREATEST(0, 30 - TIMESTAMPDIFF(DAY, s.create_time, NOW())) * 0.6
+                    + CASE
+                        WHEN COALESCE(#{keyword}, '') != '' AND s.title LIKE CONCAT('%', #{keyword}, '%') THEN 8
+                        WHEN COALESCE(#{keyword}, '') != '' AND s.description LIKE CONCAT('%', #{keyword}, '%') THEN 3
+                        ELSE 0
+                      END
+                ) DESC, s.create_time DESC
+            </when>
+            <when test="sort == 'price_asc'">
+                ORDER BY s.price ASC
+            </when>
+            <when test="sort == 'price_desc'">
+                ORDER BY s.price DESC
+            </when>
+            <otherwise>
+                ORDER BY s.create_time DESC
+            </otherwise>
+        </choose>
+        LIMIT #{offset}, #{limit}
+    </select>
+
+    <!-- 统计商品数量 -->
+    <select id="count" resultType="java.lang.Long">
+        SELECT COUNT(*)
+        FROM secondhand s
+        <where>
+            s.status = 'APPROVED'
+            AND (s.deleted = 0 OR s.deleted IS NULL)
+            <if test="category != null and category != ''">
+                AND s.category = #{category}
+            </if>
+            <if test="keyword != null and keyword != ''">
+                AND (s.title LIKE CONCAT('%', #{keyword}, '%') OR s.description LIKE CONCAT('%', #{keyword}, '%'))
+            </if>
+        </where>
+    </select>
+
+    <!-- 查询我的发布 -->
+    <select id="selectMyList" resultMap="VOResultMap">
+        SELECT s.id, s.title, s.description, s.price, s.category, s.images,
+               s.condition, s.status, s.seller_id, s.view_count, s.create_time,
+               u.username as seller_name
+        FROM secondhand s
+        LEFT JOIN user u ON s.seller_id = u.user_id
+        <where>
+            s.seller_id = #{sellerId}
+            AND (s.deleted = 0 OR s.deleted IS NULL)
+            <if test="status != null and status != ''">
+                AND s.status = #{status}
+            </if>
+        </where>
+        ORDER BY s.create_time DESC
+        LIMIT #{offset}, #{limit}
+    </select>
+
+    <!-- 统计我的发布数量 -->
+    <select id="countMy" resultType="java.lang.Long">
+        SELECT COUNT(*)
+        FROM secondhand s
+        <where>
+            s.seller_id = #{sellerId}
+            AND (s.deleted = 0 OR s.deleted IS NULL)
+            <if test="status != null and status != ''">
+                AND s.status = #{status}
+            </if>
+        </where>
+    </select>
+
+    <!-- 删除商品 -->
+    <delete id="deleteById">
+        DELETE FROM secondhand WHERE id = #{id}
+    </delete>
+
+    <!-- 更新商品状态 -->
+    <update id="updateStatus">
+        UPDATE secondhand SET status = #{status} WHERE id = #{id}
+    </update>
+
+    <!-- 增加浏览次数 -->
+    <update id="incrementViewCount">
+        UPDATE secondhand SET view_count = view_count + 1 WHERE id = #{id}
+    </update>
+
+    <!-- 查询待审核商品列表 -->
+    <select id="selectPendingList" resultMap="VOResultMap">
+        SELECT s.id, s.title, s.description, s.price, s.category, s.images,
+               s.condition, s.status, s.seller_id, s.view_count, s.create_time,
+               u.username as seller_name
+        FROM secondhand s
+        LEFT JOIN user u ON s.seller_id = u.user_id
+        <where>
+            s.status = 'PENDING'
+            AND (s.deleted = 0 OR s.deleted IS NULL)
+            <if test="category != null and category != ''">
+                AND s.category = #{category}
+            </if>
+            <if test="keyword != null and keyword != ''">
+                AND (s.title LIKE CONCAT('%', #{keyword}, '%') OR s.description LIKE CONCAT('%', #{keyword}, '%'))
+            </if>
+        </where>
+        ORDER BY s.create_time ASC
+        LIMIT #{offset}, #{limit}
+    </select>
+
+    <!-- 统计待审核商品数量 -->
+    <select id="countPending" resultType="java.lang.Long">
+        SELECT COUNT(*)
+        FROM secondhand s
+        <where>
+            s.status = 'PENDING'
+            AND (s.deleted = 0 OR s.deleted IS NULL)
+            <if test="category != null and category != ''">
+                AND s.category = #{category}
+            </if>
+            <if test="keyword != null and keyword != ''">
+                AND (s.title LIKE CONCAT('%', #{keyword}, '%') OR s.description LIKE CONCAT('%', #{keyword}, '%'))
+            </if>
+        </where>
+    </select>
+
+    <!-- 查询所有商品列表（管理员） -->
+    <select id="selectAllList" resultMap="VOResultMap">
+        SELECT s.id, s.title, s.description, s.price, s.category, s.images,
+               s.condition, s.status, s.seller_id, s.view_count, s.create_time,
+               u.username as seller_name
+        FROM secondhand s
+        LEFT JOIN user u ON s.seller_id = u.user_id
+        <where>
+            (s.deleted = 0 OR s.deleted IS NULL)
+            <if test="status != null and status != ''">
+                AND s.status = #{status}
+            </if>
+            <if test="category != null and category != ''">
+                AND s.category = #{category}
+            </if>
+            <if test="keyword != null and keyword != ''">
+                AND (s.title LIKE CONCAT('%', #{keyword}, '%') OR s.description LIKE CONCAT('%', #{keyword}, '%'))
+            </if>
+        </where>
+        ORDER BY s.create_time DESC
+        LIMIT #{offset}, #{limit}
+    </select>
+
+    <!-- 统计所有商品数量 -->
+    <select id="countAll" resultType="java.lang.Long">
+        SELECT COUNT(*)
+        FROM secondhand s
+        <where>
+            (s.deleted = 0 OR s.deleted IS NULL)
+            <if test="status != null and status != ''">
+                AND s.status = #{status}
+            </if>
+            <if test="category != null and category != ''">
+                AND s.category = #{category}
+            </if>
+            <if test="keyword != null and keyword != ''">
+                AND (s.title LIKE CONCAT('%', #{keyword}, '%') OR s.description LIKE CONCAT('%', #{keyword}, '%'))
+            </if>
+        </where>
+    </select>
+
+    <!-- 更新处理人 -->
+    <update id="updateHandler">
+        UPDATE secondhand SET handler_id = #{handlerId} WHERE id = #{id}
+    </update>
+
+    <!-- 更新时间 -->
+    <update id="updateHandleTime">
+        UPDATE secondhand SET handle_time = CURRENT_TIMESTAMP WHERE id = #{id}
+    </update>
+
+    <!-- 更新拒绝原因 -->
+    <update id="updateRejectReason">
+        UPDATE secondhand SET reject_reason = #{reason} WHERE id = #{id}
+    </update>
+
+    <!-- 更新下架原因 -->
+    <update id="updateRemoveReason">
+        UPDATE secondhand SET remove_reason = #{reason} WHERE id = #{id}
+    </update>
+
+    <!-- 条件更新状态（防并发） -->
+    <update id="updateStatusWithCondition">
+        UPDATE secondhand
+        SET status = #{status}
+        WHERE id = #{id}
+        AND status IN
+        <foreach collection="allowedStatuses" item="status" open="(" separator="," close=")">
+            #{status}
+        </foreach>
+    </update>
+
+    <!-- 软删除 -->
+    <update id="softDelete">
+        UPDATE secondhand
+        SET deleted = 1, deleted_by = #{deletedBy}, deleted_at = CURRENT_TIMESTAMP, delete_reason = #{deleteReason}
+        WHERE id = #{id} AND (deleted = 0 OR deleted IS NULL)
+    </update>
+
+    <select id="countBySeller" resultType="java.lang.Long">
+        SELECT COUNT(*)
+        FROM secondhand
+        WHERE seller_id = #{sellerId}
+          AND (deleted = 0 OR deleted IS NULL)
+    </select>
+
+    <select id="countBySellerAndStatus" resultType="java.lang.Long">
+        SELECT COUNT(*)
+        FROM secondhand
+        WHERE seller_id = #{sellerId}
+          AND status = #{status}
+          AND (deleted = 0 OR deleted IS NULL)
+    </select>
+
+</mapper>
