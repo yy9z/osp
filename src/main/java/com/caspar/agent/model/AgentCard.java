@@ -4,7 +4,7 @@ import lombok.Data;
 
 @Data
 public class AgentCard {
-    /** 卡片类型: REPAIR_ORDER / PRODUCT / LOST_FOUND / ROUTE / MESSAGE */
+    /** 卡片类型: REPAIR_ORDER / PRODUCT / LOST_FOUND / ROUTE / MESSAGE / PROACTIVE_TIPS / KNOWLEDGE */
     private String type;
     /** 卡片数据（与前端约定的结构） */
     private Object data;

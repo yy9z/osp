@@ -10,8 +10,9 @@ import org.springframework.stereotype.Component;
 @Component
 public class LostFoundFoundTool extends LostFoundTool {
 
-    public LostFoundFoundTool(com.caspar.mapper.LostFoundMapper lostFoundMapper) {
-        super(lostFoundMapper);
+    public LostFoundFoundTool(com.caspar.mapper.LostFoundMapper lostFoundMapper,
+                              com.caspar.service.LostFoundService lostFoundService) {
+        super(lostFoundMapper, lostFoundService);
     }
 
     @Override

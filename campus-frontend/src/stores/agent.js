@@ -16,6 +16,7 @@ export const useAgentStore = defineStore('agent', () => {
   const pendingAskFor = ref(null)
   const followUpType = ref(null)
   const followUpOptions = ref([])
+  const pendingConfirmationId = ref(null)
 
   function resolveAgentErrorMessage(error, fallbackMessage) {
     const rawMessage = String(error?.message || '')
@@ -48,10 +49,11 @@ export const useAgentStore = defineStore('agent', () => {
     pendingAskFor.value = null
     followUpType.value = null
     followUpOptions.value = []
+    pendingConfirmationId.value = null
     loading.value = false
   }
 
-  async function sendMessage(userMessage, context = null) {
+  async function sendMessage(userMessage, context = null, confirmation = null) {
     if (loading.value) return
 
     messages.value.push({ role: 'user', content: userMessage, timestamp: new Date() })
@@ -61,7 +63,9 @@ export const useAgentStore = defineStore('agent', () => {
       const res = await chatWithAgent({
         sessionId: sessionId.value || null,
         message: userMessage,
-        context
+        context,
+        confirmationId: confirmation?.confirmationId || null,
+        confirmationDecision: confirmation?.confirmationDecision || null
       })
 
       const data = res.data
@@ -73,16 +77,22 @@ export const useAgentStore = defineStore('agent', () => {
       pendingAskFor.value = data.askFor || null
       followUpType.value = data.followUpType || null
       followUpOptions.value = data.followUpOptions || []
+      pendingConfirmationId.value = data.confirmationRequired ? data.confirmationId : null
 
       messages.value.push({
         role: 'agent',
         content: data.reply,
         cards: data.cards || [],
+        usedTools: data.usedTools || [],
         intent: data.intent,
         taskCompleted: data.taskCompleted,
         suggestions: data.taskCompleted ? (data.followUpSuggestions || []) : [],
         followUpType: data.followUpType || null,
         followUpOptions: data.followUpOptions || [],
+        confirmationRequired: Boolean(data.confirmationRequired),
+        confirmationId: data.confirmationId || null,
+        confirmationPreview: data.confirmationPreview || null,
+        confirmationResolved: false,
         timestamp: new Date()
       })
 
@@ -90,6 +100,7 @@ export const useAgentStore = defineStore('agent', () => {
         pendingAskFor.value = null
         followUpType.value = null
         followUpOptions.value = []
+        pendingConfirmationId.value = null
       }
 
       // 历史列表异步刷新，不阻塞本次消息返回速度
@@ -110,6 +121,21 @@ export const useAgentStore = defineStore('agent', () => {
     }
   }
 
+  async function sendConfirmation({ messageIndex, confirmationId, decision }) {
+    if (loading.value || !confirmationId) return
+    const target = messages.value[messageIndex]
+    if (target?.confirmationResolved) return
+    if (target) target.confirmationResolved = true
+
+    const label = decision === 'APPROVE' ? '确认执行' : '取消'
+    const result = await sendMessage(label, null, {
+      confirmationId,
+      confirmationDecision: decision
+    })
+    if (!result && target) target.confirmationResolved = false
+    return result
+  }
+
   async function newSession() {
     if (sessionId.value) {
       try {
@@ -126,6 +152,7 @@ export const useAgentStore = defineStore('agent', () => {
     pendingAskFor.value = null
     followUpType.value = null
     followUpOptions.value = []
+    pendingConfirmationId.value = null
     loading.value = false
     await loadSessions()
   }
@@ -144,6 +171,7 @@ export const useAgentStore = defineStore('agent', () => {
         pendingAskFor.value = null
         followUpType.value = null
         followUpOptions.value = []
+        pendingConfirmationId.value = null
       }
       await loadSessions()
     } catch (e) {
@@ -174,6 +202,11 @@ export const useAgentStore = defineStore('agent', () => {
         role: msg.role,
         content: msg.content,
         cards: Array.isArray(msg.cards) ? msg.cards : [],
+        usedTools: Array.isArray(msg.usedTools) ? msg.usedTools : [],
+        confirmationRequired: Boolean(msg.confirmationRequired),
+        confirmationId: msg.confirmationId || null,
+        confirmationPreview: msg.confirmationPreview || null,
+        confirmationResolved: false,
         timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date()
       }))
       currentIntent.value = null
@@ -181,6 +214,7 @@ export const useAgentStore = defineStore('agent', () => {
       pendingAskFor.value = null
       followUpType.value = null
       followUpOptions.value = []
+      pendingConfirmationId.value = messages.value.findLast(msg => msg.confirmationRequired)?.confirmationId || null
     } catch (e) {
       ElMessage.error(resolveAgentErrorMessage(e, '加载历史会话失败'))
     } finally {
@@ -199,8 +233,10 @@ export const useAgentStore = defineStore('agent', () => {
     pendingAskFor,
     followUpType,
     followUpOptions,
+    pendingConfirmationId,
     resetState,
     sendMessage,
+    sendConfirmation,
     newSession,
     deleteSession,
     loadSessions,

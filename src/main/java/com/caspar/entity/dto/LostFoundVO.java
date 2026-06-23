@@ -51,12 +51,17 @@ public class LostFoundVO {
     private String location;
 
     /**
+     * 丢失/拾取时间
+     */
+    private LocalDateTime lostTime;
+
+    /**
      * 悬赏金额
      */
     private BigDecimal reward;
 
     /**
-     * 状态: OPEN, RESOLVED
+     * 状态: OPEN, RESOLVED, REMOVED
      */
     private String status;
 
@@ -69,11 +74,6 @@ public class LostFoundVO {
      * 发布者名称
      */
     private String publisherName;
-
-    /**
-     * 发布者电话
-     */
-    private String publisherPhone;
 
     /**
      * 创建时间

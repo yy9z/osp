@@ -1,7 +1,8 @@
 package com.caspar.service;
 
 import com.caspar.common.PageResult;
-import com.caspar.entity.LostFoundClaim;
+import com.caspar.entity.dto.LostFoundClaimVO;
+import com.caspar.entity.dto.LostFoundContactVO;
 import com.caspar.entity.dto.LostFoundMatchVO;
 import com.caspar.entity.dto.LostFoundPublishDTO;
 import com.caspar.entity.dto.LostFoundVO;
@@ -62,7 +63,17 @@ public interface LostFoundService {
      * @param lostfoundId 失物招领ID
      * @return 认领记录列表
      */
-    List<LostFoundClaim> getClaims(Long lostfoundId);
+    List<LostFoundClaimVO> getClaims(Long lostfoundId);
+
+    /**
+     * 登录后获取发布者为本条信息提供的联系方式。
+     */
+    LostFoundContactVO getContact(Long id);
+
+    /**
+     * 发布者批准或拒绝认领申请。
+     */
+    boolean reviewClaim(Long lostfoundId, Long claimId, Long publisherId, boolean approve);
 
     /**
      * 删除
@@ -79,6 +90,11 @@ public interface LostFoundService {
      * @return 是否成功
      */
     boolean resolve(Long id, Long publisherId);
+
+    /**
+     * 管理员下架。
+     */
+    boolean adminRemove(Long id, String reason);
 
     /**
      * 获取智能匹配结果（LOST 匹配 FOUND，FOUND 匹配 LOST）

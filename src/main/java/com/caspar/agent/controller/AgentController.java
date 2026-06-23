@@ -87,6 +87,7 @@ public class AgentController {
                 return Result.forbidden();
             }
             agentHistoryService.deleteSession(userId, sessionId);
+            orchestrator.clearCheckpoint(sessionId);
             sessionManager.delete(sessionId);
             return Result.success();
         } catch (SecurityException e) {

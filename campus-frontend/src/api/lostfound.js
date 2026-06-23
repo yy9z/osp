@@ -37,6 +37,36 @@ export const lostFoundApi = {
     })
   },
 
+  // 登录后按需获取联系方式
+  getContact(id) {
+    return request({
+      url: `/lostfound/${id}/contact`,
+      method: 'get'
+    })
+  },
+
+  // 发布者查看认领申请
+  getClaims(id) {
+    return request({
+      url: `/lostfound/${id}/claims`,
+      method: 'get'
+    })
+  },
+
+  approveClaim(id, claimId) {
+    return request({
+      url: `/lostfound/${id}/claims/${claimId}/approve`,
+      method: 'put'
+    })
+  },
+
+  rejectClaim(id, claimId) {
+    return request({
+      url: `/lostfound/${id}/claims/${claimId}/reject`,
+      method: 'put'
+    })
+  },
+
   // 我的发布（全部，含 LOST 和 FOUND）
   getMyList() {
     return request({

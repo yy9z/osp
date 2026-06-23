@@ -39,11 +39,17 @@
                   <div class="card-footer">
                     <span class="info-item"><el-icon><Location /></el-icon>{{ item.location }}</span>
                     <span class="info-item"><el-icon><User /></el-icon>{{ item.publisherName }}</span>
-                    <span class="info-item"><el-icon><Clock /></el-icon>{{ item.createTime?.substring(0,10) }}</span>
+                    <span class="info-item"><el-icon><Clock /></el-icon>{{ formatItemTime(item) }}</span>
                   </div>
                 </div>
                 <div class="card-actions">
-                  <el-button v-if="item.status==='OPEN'" size="small" type="success" plain @click="handleContact(item)">我捡到了</el-button>
+                  <el-button
+                    v-if="item.status==='OPEN' && item.publisherId !== currentUserId"
+                    size="small"
+                    type="success"
+                    plain
+                    @click="handleContact(item)"
+                  >我捡到了</el-button>
                 </div>
               </div>
             </el-card>
@@ -82,11 +88,17 @@
                   <div class="card-footer">
                     <span class="info-item"><el-icon><Location /></el-icon>{{ item.location }}</span>
                     <span class="info-item"><el-icon><User /></el-icon>{{ item.publisherName }}</span>
-                    <span class="info-item"><el-icon><Clock /></el-icon>{{ item.createTime?.substring(0,10) }}</span>
+                    <span class="info-item"><el-icon><Clock /></el-icon>{{ formatItemTime(item) }}</span>
                   </div>
                 </div>
                 <div class="card-actions">
-                  <el-button v-if="item.status==='OPEN'" size="small" type="primary" plain @click="handleContact(item)">这是我的</el-button>
+                  <el-button
+                    v-if="item.status==='OPEN' && item.publisherId !== currentUserId"
+                    size="small"
+                    type="primary"
+                    plain
+                    @click="handleContact(item)"
+                  >这是我的</el-button>
                 </div>
               </div>
             </el-card>
@@ -118,11 +130,12 @@
                   <p class="card-desc">{{ item.description }}</p>
                   <div class="card-footer">
                     <span class="info-item"><el-icon><Location /></el-icon>{{ item.location }}</span>
-                    <span class="info-item"><el-icon><Clock /></el-icon>{{ item.createTime?.substring(0,10) }}</span>
+                    <span class="info-item"><el-icon><Clock /></el-icon>{{ formatItemTime(item) }}</span>
                   </div>
                 </div>
                 <div class="card-actions">
                   <el-button size="small" type="primary" plain @click="handleSmartMatch(item)">智能匹配</el-button>
+                  <el-button size="small" type="primary" plain @click="handleClaims(item)">认领申请</el-button>
                   <el-button v-if="item.status==='OPEN'" size="small" type="success" plain @click="handleMarkResolved(item)">标记已找回</el-button>
                   <el-button size="small" type="danger" plain @click="handleDelete(item)">删除</el-button>
                 </div>
@@ -154,11 +167,12 @@
                   <p class="card-desc">{{ item.description }}</p>
                   <div class="card-footer">
                     <span class="info-item"><el-icon><Location /></el-icon>{{ item.location }}</span>
-                    <span class="info-item"><el-icon><Clock /></el-icon>{{ item.createTime?.substring(0,10) }}</span>
+                    <span class="info-item"><el-icon><Clock /></el-icon>{{ formatItemTime(item) }}</span>
                   </div>
                 </div>
                 <div class="card-actions">
                   <el-button size="small" type="primary" plain @click="handleSmartMatch(item)">智能匹配</el-button>
+                  <el-button size="small" type="primary" plain @click="handleClaims(item)">认领申请</el-button>
                   <el-button v-if="item.status==='OPEN'" size="small" type="success" plain @click="handleMarkResolved(item)">标记已归还</el-button>
                   <el-button size="small" type="danger" plain @click="handleDelete(item)">删除</el-button>
                 </div>
@@ -199,7 +213,7 @@
         <el-form-item :label="publishForm.type==='LOST'?'丢失地点':'拾取地点'" prop="location">
           <el-input v-model="publishForm.location" placeholder="请输入丢失或拾取地点" />
         </el-form-item>
-        <el-form-item label="丢失时间">
+        <el-form-item :label="publishForm.type==='LOST'?'丢失时间':'拾取时间'">
           <el-date-picker
             v-model="publishForm.lostTime"
             type="datetime"
@@ -249,7 +263,12 @@
       </el-form>
       <template #footer>
         <el-button @click="showPublishDialog = false">取消</el-button>
-        <el-button type="primary" @click="submitPublish" :loading="publishLoading">发布</el-button>
+        <el-button
+          type="primary"
+          @click="submitPublish"
+          :loading="publishLoading"
+          :disabled="imageUploadCount > 0"
+        >发布</el-button>
       </template>
     </el-dialog>
 
@@ -292,22 +311,57 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="showContactDialog" title="联系发布者" width="400px">
-      <div v-if="contactTarget" style="font-size:14px;line-height:2">
+    <el-dialog v-model="showContactDialog" title="联系发布者" width="440px">
+      <div v-if="contactTarget" v-loading="contactLoading" style="font-size:14px;line-height:2">
         <p>物品：<strong>{{ contactTarget.title }}</strong></p>
-        <p>联系方式：<strong>{{ contactTarget.contact || contactTarget.publisherPhone || '对方未留联系方式' }}</strong></p>
+        <p>联系方式：<strong>{{ contactTarget.contact || '正在获取...' }}</strong></p>
+        <el-input
+          v-model="claimMessage"
+          type="textarea"
+          :rows="3"
+          maxlength="500"
+          show-word-limit
+          placeholder="请说明物品特征、拾取情况或认领依据"
+        />
       </div>
       <template #footer>
         <el-button @click="showContactDialog = false">关闭</el-button>
+        <el-button type="primary" :loading="claimSubmitting" @click="submitClaim">提交认领申请</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="showClaimsDialog" title="认领申请" width="620px">
+      <div v-loading="claimsLoading">
+        <el-empty v-if="!claimsLoading && claimList.length === 0" description="暂无认领申请" />
+        <div v-else class="claim-list">
+          <div v-for="claim in claimList" :key="claim.id" class="claim-item">
+            <div class="claim-head">
+              <strong>{{ claim.claimerName || `用户${claim.claimerId}` }}</strong>
+              <el-tag size="small" :type="getClaimStatusType(claim.status)">
+                {{ getClaimStatusText(claim.status) }}
+              </el-tag>
+            </div>
+            <div class="claim-contact">联系电话：{{ claim.claimerPhone || '未填写' }}</div>
+            <div class="claim-message">{{ claim.message }}</div>
+            <div v-if="claim.status === 'PENDING'" class="claim-actions">
+              <el-button size="small" type="success" @click="reviewClaim(claim, true)">批准</el-button>
+              <el-button size="small" type="danger" plain @click="reviewClaim(claim, false)">拒绝</el-button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="showClaimsDialog = false">关闭</el-button>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, watch } from 'vue'
+import { computed, ref, reactive, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { lostFoundApi } from '@/api'
+import { uploadFile } from '@/api/request'
 import { useUserStore } from '@/stores'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Search, Location, User, Clock, Close } from '@element-plus/icons-vue'
@@ -315,6 +369,7 @@ import placeholderImg from '@/assets/placeholder.png'
 
 const route = useRoute()
 const userStore = useUserStore()
+const currentUserId = computed(() => userStore.userInfo?.userId || null)
 const validTabs = ['lost-board', 'found-board', 'my-lost', 'my-found']
 
 // ─── Tab 状态 ───
@@ -349,6 +404,10 @@ const categoryMap = {
 }
 
 const getCategoryText = (cat) => categoryMap[cat] || cat
+const formatItemTime = (item) => {
+  const value = item?.lostTime || item?.createTime
+  return value ? String(value).replace('T', ' ').substring(0, 16) : '时间未填写'
+}
 const normalizeImageList = (images) => {
   if (!images) return []
   if (Array.isArray(images)) return images.filter(Boolean)
@@ -442,6 +501,7 @@ const syncTabFromRoute = () => {
 const showPublishDialog = ref(false)
 const publishFormRef = ref()
 const publishLoading = ref(false)
+const imageUploadCount = ref(0)
 const publishForm = reactive({
   type: 'LOST', title: '', category: '', location: '', lostTime: '', description: '', images: [], contact: ''
 })
@@ -457,24 +517,49 @@ const publishRules = {
 // 联系对话框
 const showContactDialog = ref(false)
 const contactTarget = ref(null)
+const contactLoading = ref(false)
+const claimMessage = ref('')
+const claimSubmitting = ref(false)
 const showMatchDialog = ref(false)
 const matchLoading = ref(false)
 const matchSource = ref(null)
 const matchList = ref([])
+const showClaimsDialog = ref(false)
+const claimsLoading = ref(false)
+const claimsSource = ref(null)
+const claimList = ref([])
 
 function openPublishDialog(type = 'LOST') {
   Object.assign(publishForm, { type, title: '', category: '', location: '', lostTime: '', description: '', images: [], contact: '' })
   showPublishDialog.value = true
 }
 
-// 处理图片选择
-const handleImageChange = (file) => {
-  const reader = new FileReader()
-  reader.onload = (e) => {
-    if (!publishForm.images) publishForm.images = []
-    if (publishForm.images.length < 3) publishForm.images.push(e.target.result)
+// 上传后只保存URL，避免把Base64写入数据库。
+const handleImageChange = async (file) => {
+  if (!file.raw || !file.raw.type?.startsWith('image/')) {
+    ElMessage.warning('请选择图片文件')
+    return
   }
-  reader.readAsDataURL(file.raw)
+  if (file.raw.size > 10 * 1024 * 1024) {
+    ElMessage.warning('单张图片不能超过10MB')
+    return
+  }
+  if (publishForm.images.length + imageUploadCount.value >= 3) {
+    ElMessage.warning('最多上传3张图片')
+    return
+  }
+
+  imageUploadCount.value++
+  try {
+    const res = await uploadFile(file.raw)
+    const url = typeof res.data === 'string' ? res.data : res.data?.url
+    if (!url) throw new Error('上传结果缺少图片地址')
+    publishForm.images.push(url)
+  } catch (error) {
+    ElMessage.error(error.message || '图片上传失败')
+  } finally {
+    imageUploadCount.value--
+  }
 }
 
 const removeImage = (index) => { publishForm.images.splice(index, 1) }
@@ -492,7 +577,20 @@ const submitPublish = async () => {
     if (!valid) return
     publishLoading.value = true
     try {
-      await lostFoundApi.publish(publishForm)
+      if (imageUploadCount.value > 0) {
+        ElMessage.warning('请等待图片上传完成')
+        return
+      }
+      await lostFoundApi.publish({
+        type: publishForm.type,
+        title: publishForm.title,
+        category: publishForm.category,
+        location: publishForm.location,
+        lostTime: publishForm.lostTime || null,
+        description: publishForm.description,
+        images: [...publishForm.images],
+        contact: publishForm.contact
+      })
       ElMessage.success('发布成功')
       showPublishDialog.value = false
       // 刷新对应列表
@@ -547,10 +645,84 @@ const handleSmartMatch = async (item) => {
   }
 }
 
-// 联系
-const handleContact = (item) => {
-  contactTarget.value = item
+// 联系及提交认领说明
+const handleContact = async (item) => {
+  contactTarget.value = { ...item, contact: '' }
+  claimMessage.value = ''
   showContactDialog.value = true
+  contactLoading.value = true
+  try {
+    const res = await lostFoundApi.getContact(item.id)
+    contactTarget.value.contact = res.data?.contact || ''
+  } catch (error) {
+    contactTarget.value.contact = '对方未提供可用联系方式'
+  } finally {
+    contactLoading.value = false
+  }
+}
+
+const submitClaim = async () => {
+  if (!contactTarget.value) return
+  if (!claimMessage.value.trim()) {
+    ElMessage.warning('请填写认领说明')
+    return
+  }
+  claimSubmitting.value = true
+  try {
+    await lostFoundApi.claim(contactTarget.value.id, { message: claimMessage.value.trim() })
+    ElMessage.success('认领申请已提交')
+    showContactDialog.value = false
+  } catch (error) {
+    ElMessage.error(error.message || '提交认领申请失败')
+  } finally {
+    claimSubmitting.value = false
+  }
+}
+
+const getClaimStatusText = (status) => {
+  const map = { PENDING: '待处理', APPROVED: '已批准', REJECTED: '已拒绝' }
+  return map[status] || status
+}
+
+const getClaimStatusType = (status) => {
+  const map = { PENDING: 'warning', APPROVED: 'success', REJECTED: 'info' }
+  return map[status] || 'info'
+}
+
+const handleClaims = async (item) => {
+  claimsSource.value = item
+  showClaimsDialog.value = true
+  claimsLoading.value = true
+  try {
+    const res = await lostFoundApi.getClaims(item.id)
+    claimList.value = res.data || []
+  } catch (error) {
+    claimList.value = []
+    ElMessage.error(error.message || '获取认领申请失败')
+  } finally {
+    claimsLoading.value = false
+  }
+}
+
+const reviewClaim = async (claim, approve) => {
+  if (!claimsSource.value) return
+  try {
+    await ElMessageBox.confirm(
+      approve ? '批准后帖子会自动标记为已解决，确认继续？' : '确认拒绝该认领申请？',
+      '确认操作',
+      { type: approve ? 'success' : 'warning' }
+    )
+    if (approve) {
+      await lostFoundApi.approveClaim(claimsSource.value.id, claim.id)
+    } else {
+      await lostFoundApi.rejectClaim(claimsSource.value.id, claim.id)
+    }
+    ElMessage.success(approve ? '已批准认领申请' : '已拒绝认领申请')
+    await handleClaims(claimsSource.value)
+    claimsSource.value.type === 'LOST' ? fetchMyLost() : fetchMyFound()
+  } catch (error) {
+    if (error !== 'cancel') ElMessage.error(error.message || '处理认领申请失败')
+  }
 }
 
 onMounted(() => {
@@ -602,6 +774,12 @@ watch(
 .match-meta { margin-top: 6px; font-size: 12px; color: #909399; display: flex; gap: 6px; flex-wrap: wrap; }
 .match-reasons { margin-top: 6px; font-size: 12px; color: #606266; line-height: 1.5; }
 .match-actions { margin-top: 8px; }
+.claim-list { display: flex; flex-direction: column; gap: 10px; max-height: 440px; overflow: auto; }
+.claim-item { border: 1px solid #ebeef5; border-radius: 8px; padding: 12px; }
+.claim-head { display: flex; justify-content: space-between; align-items: center; }
+.claim-contact { margin-top: 8px; font-size: 13px; color: #606266; }
+.claim-message { margin-top: 6px; font-size: 13px; line-height: 1.6; color: #303133; white-space: pre-wrap; }
+.claim-actions { margin-top: 10px; display: flex; justify-content: flex-end; gap: 8px; }
 
 .pagination { display: flex; justify-content: flex-end; padding: 10px 0; }
 

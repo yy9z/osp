@@ -3,9 +3,11 @@ package com.caspar.agent.service;
 import com.caspar.agent.llm.LlmClient;
 import com.caspar.agent.model.AgentSession;
 import com.caspar.agent.model.FunctionCallPlan;
+import com.caspar.agent.registry.AgentToolCatalog;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -163,6 +165,32 @@ class FunctionCallingPlannerServiceTest {
     }
 
     @Test
+    void plan_shouldExposeKnowledgeToolAndUseOriginalQuestion() {
+        LlmClient llmClient = mock(LlmClient.class);
+        when(llmClient.chat(anyList())).thenReturn("""
+                {
+                  "intent": "CAMPUS_KNOWLEDGE",
+                  "confidence": 0.94,
+                  "tool_calls": [
+                    {
+                      "name": "campus_knowledge_query",
+                      "arguments": {"module": "宿舍报修"}
+                    }
+                  ],
+                  "missing_slots": []
+                }
+                """);
+
+        FunctionCallingPlannerService service = newService(llmClient);
+        FunctionCallPlan plan = service.plan("宿舍报修的办理流程是什么", new AgentSession());
+
+        assertEquals("CAMPUS_KNOWLEDGE", plan.getIntent());
+        assertEquals(List.of("campus_knowledge_query"), plan.getToolNames());
+        assertEquals("宿舍报修的办理流程是什么", plan.getSlots().get("question"));
+        assertTrue(plan.getMissingSlots().isEmpty());
+    }
+
+    @Test
     void plan_shouldSupportOpenAiNestedFunctionCallShape() {
         LlmClient llmClient = mock(LlmClient.class);
         when(llmClient.chat(anyList())).thenReturn("""
@@ -191,13 +219,47 @@ class FunctionCallingPlannerServiceTest {
         assertEquals("walking", plan.getSlots().get("travel_mode"));
     }
 
+    @Test
+    void plan_shouldBindDirectAnswerToPendingSlotWhenModelOmitsIt() {
+        LlmClient llmClient = mock(LlmClient.class);
+        when(llmClient.chat(anyList())).thenReturn("""
+                {
+                  "intent": "SECONDHAND_PUBLISH",
+                  "confidence": 0.9,
+                  "tool_calls": [{"name": "secondhand_publish", "arguments": {}}]
+                }
+                """);
+
+        AgentSession titleSession = new AgentSession();
+        titleSession.setIntent("SECONDHAND_PUBLISH");
+        titleSession.setPendingSlots(List.of("title"));
+        FunctionCallPlan titlePlan = newService(llmClient).plan("九成新台灯", titleSession);
+
+        assertEquals("九成新台灯", titlePlan.getSlots().get("title"));
+        assertEquals(List.of("category", "price"), titlePlan.getMissingSlots());
+
+        AgentSession priceSession = new AgentSession();
+        priceSession.setIntent("SECONDHAND_PUBLISH");
+        priceSession.setSlots(new java.util.HashMap<>(java.util.Map.of(
+                "title", "九成新台灯",
+                "category", "生活"
+        )));
+        priceSession.setPendingSlots(List.of("price"));
+        FunctionCallPlan pricePlan = newService(llmClient).plan("50元", priceSession);
+
+        assertEquals(new BigDecimal("50"), pricePlan.getSlots().get("price"));
+        assertTrue(pricePlan.getMissingSlots().isEmpty());
+    }
+
     private FunctionCallingPlannerService newService(LlmClient llmClient) {
         return new FunctionCallingPlannerService(
                 llmClient,
                 new ObjectMapper(),
                 mock(IntentService.class),
                 mock(SlotFillingService.class),
-                mock(PlannerService.class)
+                mock(PlannerService.class),
+                new AgentToolCatalog(),
+                mock(NativeToolCallingPlannerService.class)
         );
     }
 }

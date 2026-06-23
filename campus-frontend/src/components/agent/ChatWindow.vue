@@ -4,7 +4,7 @@
     <div v-if="messages.length === 0" class="chat-welcome">
       <div class="welcome-icon">🤖</div>
       <h3 class="welcome-title">校园智能助手</h3>
-      <p class="welcome-sub">我可以帮你处理：报修宿舍、搜索二手、失物招领、校园导航</p>
+      <p class="welcome-sub">我可以帮你处理校园事务，也能检索平台规则与使用说明</p>
       <div class="quick-btns">
         <el-button
           v-for="tip in quickTips"
@@ -44,6 +44,37 @@
             class="msg-card"
           />
         </template>
+
+        <div v-if="msg.confirmationRequired" class="confirmation-panel">
+          <div class="confirmation-title">{{ msg.confirmationPreview?.action || '待确认操作' }}</div>
+          <div
+            v-for="item in (msg.confirmationPreview?.parameters || [])"
+            :key="item.name"
+            class="confirmation-row"
+          >
+            <span>{{ item.label }}</span>
+            <strong>{{ formatPreviewValue(item.value) }}</strong>
+          </div>
+          <div class="confirmation-actions">
+            <el-button
+              type="primary"
+              size="small"
+              :disabled="loading || msg.confirmationResolved"
+              @click="$emit('confirm', { messageIndex: idx, confirmationId: msg.confirmationId, decision: 'APPROVE' })"
+            >
+              <el-icon><Check /></el-icon>
+              确认执行
+            </el-button>
+            <el-button
+              size="small"
+              :disabled="loading || msg.confirmationResolved"
+              @click="$emit('confirm', { messageIndex: idx, confirmationId: msg.confirmationId, decision: 'REJECT' })"
+            >
+              <el-icon><Close /></el-icon>
+              取消
+            </el-button>
+          </div>
+        </div>
       </div>
 
       <!-- 用户头像（使用个人中心真实头像） -->
@@ -73,13 +104,15 @@ import LostFoundCard from './cards/LostFoundCard.vue'
 import RouteCard from './cards/RouteCard.vue'
 import MessageCard from './cards/MessageCard.vue'
 import ProactiveTipsCard from './cards/ProactiveTipsCard.vue'
+import KnowledgeCard from './cards/KnowledgeCard.vue'
 import { useUserStore } from '@/stores/user'
+import { Check, Close } from '@element-plus/icons-vue'
 
 const props = defineProps({
   messages: { type: Array, default: () => [] },
   loading: { type: Boolean, default: false }
 })
-defineEmits(['send'])
+defineEmits(['send', 'confirm'])
 
 const userStore = useUserStore()
 
@@ -90,6 +123,7 @@ const quickTips = [
   '找个50元以内的台灯',
   '我丢了一个黑色保温杯',
   '图书馆怎么走',
+  '宿舍报修的办理流程是什么',
   '查看我的待办提醒',
   '查看我的消息通知'
 ]
@@ -101,8 +135,15 @@ function resolveCardComponent(type) {
     LOST_FOUND: LostFoundCard,
     ROUTE: RouteCard,
     MESSAGE: MessageCard,
-    PROACTIVE_TIPS: ProactiveTipsCard
+    PROACTIVE_TIPS: ProactiveTipsCard,
+    KNOWLEDGE: KnowledgeCard
   }[type] || 'div'
+}
+
+function formatPreviewValue(value) {
+  if (Array.isArray(value)) return value.join('、')
+  if (value && typeof value === 'object') return JSON.stringify(value)
+  return String(value ?? '')
 }
 
 // 新消息后自动滚动到底部
@@ -196,4 +237,39 @@ watch(() => [props.messages.length, props.loading], () => {
 }
 
 .msg-card { margin-top: 6px; }
+
+.confirmation-panel {
+  min-width: 280px;
+  margin-top: 8px;
+  padding: 12px;
+  border: 1px solid #dcdfe6;
+  border-radius: 8px;
+  background: #fff;
+}
+.confirmation-title {
+  margin-bottom: 8px;
+  color: #303133;
+  font-size: 14px;
+  font-weight: 600;
+}
+.confirmation-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 4px 0;
+  color: #606266;
+  font-size: 13px;
+}
+.confirmation-row strong {
+  max-width: 60%;
+  color: #303133;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+.confirmation-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
 </style>

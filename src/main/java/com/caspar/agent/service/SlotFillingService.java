@@ -5,6 +5,7 @@ import com.caspar.agent.model.AgentSession;
 import com.caspar.agent.model.LlmMessage;
 import com.caspar.agent.model.NavigationSlots;
 import com.caspar.agent.model.SlotResult;
+import com.caspar.agent.registry.AgentToolCatalog;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -28,31 +29,7 @@ public class SlotFillingService {
     private final LlmClient llmClient;
     private final ObjectMapper objectMapper;
     private final NavigationSlotExtractor navigationSlotExtractor;
-
-    /** 各意图的必填槽位定义 */
-    private static final Map<String, List<String>> REQUIRED_SLOTS = Map.of(
-            "DORM_REPAIR",       List.of("fault_type"),
-            "DORM_QUERY",        List.of(),
-            "REPAIR_QUERY",      List.of(),
-            "SECONDHAND_SEARCH", List.of(),
-            "SECONDHAND_PUBLISH", List.of("title", "category", "price"),
-            "LOSTFOUND_LOST",    List.of("item_name"),
-            "LOSTFOUND_FOUND",   List.of("item_name"),
-            "NAVIGATION",        List.of("destination"),
-            "MESSAGE_QUERY",     List.of()
-    );
-
-    /** 各槽位对应的追问文本 */
-    private static final Map<String, String> SLOT_QUESTIONS = Map.of(
-            "fault_type",   "好的，请问是什么故障？（空调/灯/网络/门锁/水管/其他）",
-            "dorm_no",      "请问您的宿舍号是多少？",
-            "item_name",    "请描述一下丢失的物品名称是什么？",
-            "destination",  "请问您要去哪里？",
-            "campus",       "中科大有多个校区，请问您想去哪个校区？（东校区/西校区/南校区/中校区/高新校区）",
-            "title",        "请输入商品的标题：",
-            "category",     "请选择分类：数码/书籍/生活/服装/其他",
-            "price",        "请输入出售价格（元）："
-    );
+    private final AgentToolCatalog toolCatalog;
 
     /**
      * 从对话上下文中提取槽位，判断缺失参数。
@@ -97,7 +74,7 @@ public class SlotFillingService {
         }
 
         // 判断缺失的必填槽位
-        List<String> required = REQUIRED_SLOTS.getOrDefault(intent, Collections.emptyList());
+        List<String> required = toolCatalog.getRequiredSlots(intent);
         List<String> missing = new ArrayList<>();
         for (String slot : required) {
             Object val = extracted.get(slot);
@@ -110,7 +87,7 @@ public class SlotFillingService {
         result.setSlots(extracted);
         result.setMissingSlots(missing);
         if (!missing.isEmpty()) {
-            result.setAskQuestion(SLOT_QUESTIONS.getOrDefault(missing.get(0), "请提供更多信息："));
+            result.setAskQuestion(toolCatalog.getSlotQuestion(missing.get(0)));
         }
         return result;
     }
@@ -156,7 +133,7 @@ public class SlotFillingService {
             result.setSlots(extracted);
             result.setMissingSlots(missing);
             if (!missing.isEmpty()) {
-                result.setAskQuestion(SLOT_QUESTIONS.getOrDefault(missing.get(0), "请提供更多信息："));
+                result.setAskQuestion(toolCatalog.getSlotQuestion(missing.get(0)));
             }
             return result;
         } catch (Exception e) {

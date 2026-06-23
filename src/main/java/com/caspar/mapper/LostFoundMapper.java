@@ -2,6 +2,7 @@ package com.caspar.mapper;
 
 import com.caspar.entity.LostFound;
 import com.caspar.entity.LostFoundClaim;
+import com.caspar.entity.dto.LostFoundClaimVO;
 import com.caspar.entity.dto.LostFoundVO;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -79,6 +80,10 @@ public interface LostFoundMapper {
      */
     int updateStatus(@Param("id") Long id, @Param("status") String status);
 
+    int updateStatusIfCurrent(@Param("id") Long id,
+                              @Param("status") String status,
+                              @Param("currentStatus") String currentStatus);
+
     /**
      * 插入认领记录
      */
@@ -87,12 +92,25 @@ public interface LostFoundMapper {
     /**
      * 查询认领记录
      */
-    List<LostFoundClaim> selectClaimsByLostFoundId(@Param("lostfoundId") Long lostfoundId);
+    List<LostFoundClaimVO> selectClaimsByLostFoundId(@Param("lostfoundId") Long lostfoundId);
+
+    LostFoundClaimVO findClaimById(@Param("id") Long id);
 
     /**
      * 更新认领状态
      */
     int updateClaimStatus(@Param("id") Long id, @Param("status") String status);
+
+    int updatePendingClaimStatus(@Param("id") Long id,
+                                 @Param("lostfoundId") Long lostfoundId,
+                                 @Param("status") String status);
+
+    int rejectOtherPendingClaims(@Param("lostfoundId") Long lostfoundId,
+                                 @Param("approvedClaimId") Long approvedClaimId);
+
+    int rejectAllPendingClaims(@Param("lostfoundId") Long lostfoundId);
+
+    int deleteClaimsByLostFoundId(@Param("lostfoundId") Long lostfoundId);
 
     /**
      * 检查是否已认领
@@ -104,4 +122,6 @@ public interface LostFoundMapper {
     Long countAll(@Param("type") String type, @Param("category") String category, @Param("keyword") String keyword, @Param("status") String status);
 
     int updateRemoveReason(@Param("id") Long id, @Param("reason") String reason);
+
+    String findContactById(@Param("id") Long id);
 }

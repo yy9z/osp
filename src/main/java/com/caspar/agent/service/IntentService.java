@@ -40,6 +40,7 @@ public class IntentService {
             - NAVIGATION: 问路、导航、去哪里怎么走
             - MESSAGE_QUERY: 查看消息、通知
             - CAMPUS_TIPS: 查看待办、主动提醒、优先处理事项
+            - CAMPUS_KNOWLEDGE: 查询平台使用说明、校园事务流程、规则、注意事项和常见问题
             - UNKNOWN: 无法识别
 
             示例：
@@ -73,11 +74,19 @@ public class IntentService {
             "NAVIGATION",
             "MESSAGE_QUERY",
             "CAMPUS_TIPS",
+            "CAMPUS_KNOWLEDGE",
             "UNKNOWN"
     );
 
     public IntentResult identify(String userInput) {
         return identify(userInput, List.of());
+    }
+
+    /**
+     * Local-only intent hint used to gate optional native Tool Calling pilots.
+     */
+    public IntentResult identifyByRules(String userInput) {
+        return heuristicIdentify(userInput, false);
     }
 
     public IntentResult identify(String userInput, List<Map<String, String>> sessionHistory) {
@@ -158,22 +167,22 @@ public class IntentService {
             return false;
         }
         String lower = text.toLowerCase(Locale.ROOT);
-        // 明显是通用AI任务（写作/编程/翻译/学习等）时，优先走通用问答
-        if (TextMatchUtils.containsAnyIgnoreCase(lower,
-                "写代码", "编程", "python", "java", "javascript", "sql",
-                "翻译", "润色", "总结", "改写", "写作", "论文", "简历",
-                "算法", "数学", "题目", "面试", "英语", "学习计划")) {
+        if (isClearlyGeneralAiTask(lower)) {
             return false;
         }
 
-        // 仅在出现较强校园业务词时才触发业务分流，避免误伤普通问答
+        // 复用本地意图规则，避免预筛选词表和正式兜底词表发生漂移。
+        if (!"UNKNOWN".equals(heuristicIdentify(text, false).getIntent())) {
+            return true;
+        }
+
+        // 业务入口名或缺少具体动作的短句也应进入正式规划器继续判断。
         if (TextMatchUtils.containsAnyIgnoreCase(lower,
-                "宿舍报修", "报修", "维修工单", "工单进度", "我的宿舍", "宿舍信息",
-                "二手", "闲置", "求购", "发布商品", "上架", "下架", "我的收藏",
-                "失物招领", "寻物", "招领", "捡到", "丢了", "遗失",
-                "校园导航", "怎么走", "路线规划", "从哪到哪", "校区", "图书馆怎么走", "食堂怎么走",
-                "消息中心", "消息通知", "未读消息", "站内消息",
-                "智能提醒", "主动提醒", "待办", "有什么要处理", "优先事项")) {
+                "二手", "闲置", "求购", "发布商品", "上架", "下架", "我的收藏", "转让", "出售", "出手",
+                "失物招领", "寻物", "招领",
+                "路线规划", "校园地图",
+                "消息中心", "站内消息",
+                "智能提醒", "主动提醒")) {
             return true;
         }
 
@@ -188,14 +197,43 @@ public class IntentService {
         return isLikelySecondhandScenario(lower) || isLikelyMessageScenario(lower);
     }
 
+    private boolean isClearlyGeneralAiTask(String lower) {
+        if (TextMatchUtils.containsAnyIgnoreCase(lower,
+                "写代码", "编程", "翻译", "润色", "总结", "改写", "写作",
+                "写论文", "写简历", "学习计划")) {
+            return true;
+        }
+
+        boolean hasWritingAction = TextMatchUtils.containsAnyIgnoreCase(lower, "写", "撰写", "生成");
+        boolean hasWritingArtifact = TextMatchUtils.containsAnyIgnoreCase(lower, "论文", "简历", "作文", "文章", "报告");
+        if (hasWritingAction && hasWritingArtifact) {
+            return true;
+        }
+
+        boolean hasProgrammingTopic = TextMatchUtils.containsAnyIgnoreCase(lower,
+                "python", "java", "javascript", "typescript", "sql", "算法");
+        boolean hasProgrammingTask = TextMatchUtils.containsAnyIgnoreCase(lower,
+                "代码", "程序", "函数", "语法", "报错", "调试", "实现", "怎么写", "怎么做");
+        if (hasProgrammingTopic && hasProgrammingTask) {
+            return true;
+        }
+
+        boolean hasStudyTopic = TextMatchUtils.containsAnyIgnoreCase(lower,
+                "数学", "题目", "英语", "论文", "简历", "面试");
+        boolean hasStudyTask = TextMatchUtils.containsAnyIgnoreCase(lower,
+                "解题", "证明", "计算", "怎么做", "怎么学", "怎么写", "怎么查", "查资料", "准备", "练习");
+        return hasStudyTopic && hasStudyTask;
+    }
+
     private boolean isLikelySecondhandScenario(String lower) {
         boolean hasSearchAction = TextMatchUtils.containsAnyIgnoreCase(lower,
-                "找", "买", "收", "求购", "有没有", "多少钱", "预算", "便宜");
+                "找", "买", "收", "求购", "有没有", "多少钱", "预算", "便宜", "想要");
         boolean hasPublishAction = TextMatchUtils.containsAnyIgnoreCase(lower,
-                "卖", "出", "转让", "处理掉", "挂上去", "挂一下");
+                "卖", "出", "出售", "出手", "转让", "处理掉", "挂上去", "挂一下");
         boolean hasGoodsWord = TextMatchUtils.containsAnyIgnoreCase(lower,
-                "台灯", "自行车", "电动车", "耳机", "电脑", "笔记本", "手机", "书", "教材",
+                "商品", "物品", "台灯", "自行车", "电动车", "耳机", "电脑", "笔记本", "手机", "书", "教材",
                 "鼠标", "键盘", "显示器", "充电器", "插排", "风扇", "水杯", "杯子",
+                "音箱", "相机", "平板", "行李箱", "雨伞", "吉他",
                 "篮球", "羽毛球拍", "球拍", "衣服", "椅子", "桌子", "床垫");
         boolean hasBudget = TextMatchUtils.containsAnyIgnoreCase(lower,
                 "元以内", "块以内", "以内", "以下", "预算")
@@ -211,6 +249,27 @@ public class IntentService {
                 "查看", "查询", "查", "看", "看看", "打开", "我的", "最近", "最新");
 
         return hasMessageWord && hasQueryAction;
+    }
+
+    private boolean isLikelyRepairQuery(String lower) {
+        if (TextMatchUtils.containsAnyIgnoreCase(lower,
+                "工单", "报修进度", "报修状态", "维修状态", "维修进度", "修好了吗", "修完了吗")) {
+            return true;
+        }
+        boolean hasRepairContext = TextMatchUtils.containsAnyIgnoreCase(lower, "报修", "维修", "修理");
+        boolean hasStatusQuestion = TextMatchUtils.containsAnyIgnoreCase(lower,
+                "处理了吗", "处理完了吗", "完成了吗", "怎么样了", "有结果吗", "到哪一步", "进展");
+        return hasRepairContext && hasStatusQuestion;
+    }
+
+    private boolean isLikelyKnowledgeQuery(String lower) {
+        boolean hasKnowledgeAction = TextMatchUtils.containsAnyIgnoreCase(lower,
+                "平台怎么用", "怎么使用", "如何使用", "怎么操作", "操作流程", "使用说明",
+                "规则", "注意事项", "常见问题", "faq", "流程", "知识库");
+        boolean hasCampusContext = TextMatchUtils.containsAnyIgnoreCase(lower,
+                "平台", "助手", "校园", "报修", "二手", "失物", "招领", "寻物",
+                "消息", "通知", "导航", "面交", "校园卡");
+        return hasKnowledgeAction && hasCampusContext;
     }
 
     private void normalizeIntent(IntentResult result) {
@@ -235,22 +294,26 @@ public class IntentService {
      * LLM 异常时的本地关键词兜底，保障基础事务不因模型抖动而完全不可用。
      */
     private IntentResult heuristicIdentify(String userInput) {
+        return heuristicIdentify(userInput, true);
+    }
+
+    private IntentResult heuristicIdentify(String userInput, boolean logMatch) {
         String text = userInput == null ? "" : userInput.trim();
         String lower = text.toLowerCase(Locale.ROOT);
 
         String intent = "UNKNOWN";
         double confidence = 0.0;
 
-        if (TextMatchUtils.containsAnyIgnoreCase(lower, "导航", "怎么走", "去哪里", "从哪到哪", "图书馆", "食堂", "教学楼", "校区")) {
-            intent = "NAVIGATION";
-            confidence = 0.78;
+        if (isLikelyKnowledgeQuery(lower)) {
+            intent = "CAMPUS_KNOWLEDGE";
+            confidence = 0.77;
+        } else if (isLikelyRepairQuery(lower)) {
+            intent = "REPAIR_QUERY";
+            confidence = 0.75;
         } else if (TextMatchUtils.containsAnyIgnoreCase(lower, "报修", "维修", "故障", "坏了", "坏掉", "不工作")
                 && TextMatchUtils.containsAnyIgnoreCase(lower, "宿舍", "寝室", "空调", "灯", "门锁", "网络", "水管")) {
             intent = "DORM_REPAIR";
             confidence = 0.76;
-        } else if (TextMatchUtils.containsAnyIgnoreCase(lower, "工单", "报修进度", "报修状态", "维修状态")) {
-            intent = "REPAIR_QUERY";
-            confidence = 0.75;
         } else if (TextMatchUtils.containsAnyIgnoreCase(lower, "捡到", "拾到", "发现了", "找到失主")) {
             intent = "LOSTFOUND_FOUND";
             confidence = 0.74;
@@ -258,11 +321,13 @@ public class IntentService {
             intent = "LOSTFOUND_LOST";
             confidence = 0.74;
         } else if (TextMatchUtils.containsAnyIgnoreCase(lower, "卖", "出", "转让", "闲置", "出手")
-                && TextMatchUtils.containsAnyIgnoreCase(lower, "二手", "台灯", "自行车", "书", "耳机", "电脑")) {
+                && TextMatchUtils.containsAnyIgnoreCase(lower, "商品", "物品", "二手", "台灯", "自行车", "书", "耳机", "电脑")) {
             intent = "SECONDHAND_PUBLISH";
             confidence = 0.72;
-        } else if (TextMatchUtils.containsAnyIgnoreCase(lower, "找", "买", "求购", "有没有", "多少钱", "预算", "元以内", "便宜", "推荐")
-                && TextMatchUtils.containsAnyIgnoreCase(lower, "台灯", "自行车", "耳机", "电脑", "书", "二手")) {
+        } else if ((TextMatchUtils.containsAnyIgnoreCase(lower, "找", "买", "求购", "有没有", "多少钱", "预算", "元以内", "便宜")
+                || (TextMatchUtils.containsAnyIgnoreCase(lower, "推荐")
+                && TextMatchUtils.containsAnyIgnoreCase(lower, "二手", "预算", "元以内", "块以内", "便宜")))
+                && TextMatchUtils.containsAnyIgnoreCase(lower, "商品", "物品", "台灯", "自行车", "耳机", "电脑", "书", "二手")) {
             intent = "SECONDHAND_SEARCH";
             confidence = 0.73;
         } else if (TextMatchUtils.containsAnyIgnoreCase(lower, "消息", "通知", "未读", "公告")) {
@@ -274,12 +339,15 @@ public class IntentService {
         } else if (TextMatchUtils.containsAnyIgnoreCase(lower, "我的宿舍", "室友", "寝室信息", "宿舍信息")) {
             intent = "DORM_QUERY";
             confidence = 0.71;
+        } else if (TextMatchUtils.containsAnyIgnoreCase(lower, "导航", "怎么走", "去哪里", "从哪到哪", "图书馆", "食堂", "教学楼", "校区")) {
+            intent = "NAVIGATION";
+            confidence = 0.78;
         }
 
         IntentResult result = new IntentResult();
         result.setIntent(intent);
         result.setConfidence(confidence);
-        if (!"UNKNOWN".equals(intent)) {
+        if (logMatch && !"UNKNOWN".equals(intent)) {
             log.info("规则兜底命中 intent={}, confidence={}", intent, confidence);
         }
         return result;

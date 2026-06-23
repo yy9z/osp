@@ -10,8 +10,8 @@
       <el-form inline>
         <el-form-item label="状态">
           <el-select v-model="statusFilter" placeholder="全部" clearable @change="loadList">
-            <el-option label="有效" value="ACTIVE" />
-            <el-option label="已认领" value="CLAIMED" />
+            <el-option label="进行中" value="OPEN" />
+            <el-option label="已解决" value="RESOLVED" />
             <el-option label="已下架" value="REMOVED" />
           </el-select>
         </el-form-item>
@@ -37,7 +37,7 @@
         <el-table-column prop="createTime" label="发布时间" width="160" />
         <el-table-column label="操作" width="150" fixed="right">
           <template #default="{ row }">
-            <el-button v-if="row.status === 'ACTIVE'" type="danger" size="small" @click="handleRemove(row)">下架</el-button>
+            <el-button v-if="row.status !== 'REMOVED'" type="danger" size="small" @click="handleRemove(row)">下架</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -78,12 +78,12 @@ const removeReason = ref('')
 const currentItem = ref(null)
 
 const getStatusType = (status) => {
-  const map = { ACTIVE: 'success', CLAIMED: 'warning', REMOVED: 'info' }
+  const map = { OPEN: 'success', RESOLVED: 'warning', REMOVED: 'info' }
   return map[status] || ''
 }
 
 const getStatusText = (status) => {
-  const map = { ACTIVE: '有效', CLAIMED: '已认领', REMOVED: '已下架' }
+  const map = { OPEN: '进行中', RESOLVED: '已解决', REMOVED: '已下架' }
   return map[status] || status
 }
 

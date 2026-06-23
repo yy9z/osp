@@ -36,6 +36,14 @@ public interface AgentHistoryMapper {
                                                  @Param("sessionId") String sessionId,
                                                  @Param("limit") Integer limit);
 
+    List<AgentLogRecord> selectLatestSessionLogs(@Param("userId") Long userId,
+                                                 @Param("sessionId") String sessionId,
+                                                 @Param("limit") Integer limit);
+
+    List<AgentLogRecord> selectLatestSessionLogsLegacy(@Param("userId") Long userId,
+                                                       @Param("sessionId") String sessionId,
+                                                       @Param("limit") Integer limit);
+
     int deleteSessionLogs(@Param("userId") Long userId,
                           @Param("sessionId") String sessionId);
 

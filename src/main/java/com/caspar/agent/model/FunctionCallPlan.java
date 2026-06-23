@@ -2,6 +2,7 @@ package com.caspar.agent.model;
 
 import lombok.Data;
 
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -11,7 +12,7 @@ import java.util.Map;
  * 单次 Function Calling 规划结果：同时包含意图、函数名和结构化参数。
  */
 @Data
-public class FunctionCallPlan {
+public class FunctionCallPlan implements Serializable {
     /** 业务意图，如 SECONDHAND_SEARCH / NAVIGATION / UNKNOWN */
     private String intent = "UNKNOWN";
     /** 置信度 0~1 */

@@ -2,6 +2,7 @@ package com.caspar.agent.model;
 
 import lombok.Data;
 
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -11,7 +12,7 @@ import java.util.Map;
  * Agent 会话状态，存储在 Redis 中
  */
 @Data
-public class AgentSession {
+public class AgentSession implements Serializable {
     private String sessionId;
     private Long userId;
     /** 当前正在处理的意图 */

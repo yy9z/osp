@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Agent 历史会话持久化服务。
@@ -28,6 +29,19 @@ public class AgentHistoryService {
 
     private static final int DEFAULT_SESSION_LIMIT = 30;
     private static final int DEFAULT_HISTORY_LIMIT = 200;
+    private static final Set<String> BUSINESS_INTENTS = Set.of(
+            "DORM_REPAIR",
+            "DORM_QUERY",
+            "REPAIR_QUERY",
+            "SECONDHAND_SEARCH",
+            "SECONDHAND_PUBLISH",
+            "LOSTFOUND_LOST",
+            "LOSTFOUND_FOUND",
+            "NAVIGATION",
+            "MESSAGE_QUERY",
+            "CAMPUS_TIPS",
+            "CAMPUS_KNOWLEDGE"
+    );
 
     private final AgentHistoryMapper agentHistoryMapper;
     private final ObjectMapper objectMapper;
@@ -77,7 +91,8 @@ public class AgentHistoryService {
         int safeLimit = normalizeLimit(limit, DEFAULT_HISTORY_LIMIT, 500);
         List<AgentLogRecord> logs = loadSessionLogsWithFallback(userId, sessionId, safeLimit);
         List<AgentChatMessage> messages = new ArrayList<>();
-        for (AgentLogRecord log : logs) {
+        for (int index = 0; index < logs.size(); index++) {
+            AgentLogRecord log = logs.get(index);
             if (log.getUserInput() != null && !log.getUserInput().isBlank()) {
                 messages.add(AgentChatMessage.builder()
                         .role("user")
@@ -87,11 +102,20 @@ public class AgentHistoryService {
                         .build());
             }
             if (log.getReply() != null && !log.getReply().isBlank()) {
+                Map<String, Object> responsePayload = parseObjectMap(log.getResponsePayload());
+                boolean pendingConfirmation = index == logs.size() - 1
+                        && Boolean.TRUE.equals(responsePayload.get("confirmationRequired"))
+                        && "PENDING".equals(responsePayload.get("confirmationStatus"));
                 messages.add(AgentChatMessage.builder()
                         .role("agent")
                         .content(log.getReply())
                         .cards(parseCardsFromPayload(log.getResponsePayload()))
                         .timestamp(log.getCreatedAt())
+                        .confirmationRequired(pendingConfirmation)
+                        .confirmationId(pendingConfirmation
+                                ? String.valueOf(responsePayload.get("confirmationId")) : null)
+                        .confirmationPreview(pendingConfirmation
+                                ? asObjectMap(responsePayload.get("confirmationPreview")) : Collections.emptyMap())
                         .build());
             }
         }
@@ -125,7 +149,7 @@ public class AgentHistoryService {
             return;
         }
         int safeLimit = normalizeLimit(maxTurns, 20, 100);
-        List<AgentLogRecord> logs = loadSessionLogsWithFallback(userId, sessionId, safeLimit);
+        List<AgentLogRecord> logs = loadLatestSessionLogsWithFallback(userId, sessionId, safeLimit);
         for (AgentLogRecord log : logs) {
             if (log.getUserInput() != null && !log.getUserInput().isBlank()) {
                 session.addHistory("user", log.getUserInput());
@@ -134,6 +158,7 @@ public class AgentHistoryService {
                 session.addHistory("assistant", log.getReply());
             }
         }
+        restorePendingBusinessState(session, logs);
     }
 
     public void recordTurn(String sessionId,
@@ -187,6 +212,93 @@ public class AgentHistoryService {
                 log.warn("查询 Agent 会话历史失败，降级为空: {}", legacyEx.getMessage());
                 return Collections.emptyList();
             }
+        }
+    }
+
+    private List<AgentLogRecord> loadLatestSessionLogsWithFallback(Long userId, String sessionId, Integer limit) {
+        try {
+            return agentHistoryMapper.selectLatestSessionLogs(userId, sessionId, limit);
+        } catch (Exception e) {
+            try {
+                return agentHistoryMapper.selectLatestSessionLogsLegacy(userId, sessionId, limit);
+            } catch (Exception legacyEx) {
+                log.warn("恢复 Agent 最近会话失败，降级为空: {}", legacyEx.getMessage());
+                return Collections.emptyList();
+            }
+        }
+    }
+
+    private void restorePendingBusinessState(AgentSession session, List<AgentLogRecord> logs) {
+        if (logs == null || logs.isEmpty()) {
+            return;
+        }
+        AgentLogRecord lastLog = logs.get(logs.size() - 1);
+        if (!Boolean.TRUE.equals(lastLog.getSuccess()) || !BUSINESS_INTENTS.contains(lastLog.getIntent())) {
+            return;
+        }
+
+        List<String> toolsUsed = parseStringList(lastLog.getToolsUsed());
+        Map<String, Object> responsePayload = parseObjectMap(lastLog.getResponsePayload());
+        String confirmationStatus = String.valueOf(responsePayload.getOrDefault("confirmationStatus", ""));
+        if (!confirmationStatus.isBlank() && !"PENDING".equals(confirmationStatus)) {
+            return;
+        }
+        String followUpType = String.valueOf(responsePayload.getOrDefault("followUpType", ""));
+        boolean hasPendingFollowUp = !followUpType.isBlank()
+                && (!"write_confirmation".equals(followUpType)
+                || "PENDING".equals(responsePayload.get("confirmationStatus")));
+        boolean isSlotQuestion = toolsUsed.isEmpty() && looksLikeClarification(lastLog.getReply());
+        if (!hasPendingFollowUp && !isSlotQuestion) {
+            return;
+        }
+
+        session.setIntent(lastLog.getIntent());
+        session.setSlots(parseObjectMap(lastLog.getSlots()));
+        session.setTurnCount(Math.max(1, lastLog.getTurn() == null ? 1 : lastLog.getTurn()));
+        log.info("已恢复待补充业务状态, sessionId={}, intent={}", session.getSessionId(), lastLog.getIntent());
+    }
+
+    private boolean looksLikeClarification(String reply) {
+        return TextMatchUtils.containsAnyIgnoreCase(reply,
+                "请问", "请提供", "请输入", "请选择", "请补充", "请确认", "能否告诉", "需要补充", "补充信息");
+    }
+
+    private Map<String, Object> parseObjectMap(String json) {
+        if (json == null || json.isBlank()) {
+            return new java.util.HashMap<>();
+        }
+        try {
+            Map<String, Object> parsed = objectMapper.readValue(
+                    json,
+                    new TypeReference<Map<String, Object>>() {}
+            );
+            return parsed == null ? new java.util.HashMap<>() : new java.util.HashMap<>(parsed);
+        } catch (Exception e) {
+            return new java.util.HashMap<>();
+        }
+    }
+
+    private Map<String, Object> asObjectMap(Object value) {
+        if (!(value instanceof Map<?, ?> map)) {
+            return Collections.emptyMap();
+        }
+        Map<String, Object> result = new java.util.LinkedHashMap<>();
+        map.forEach((key, item) -> result.put(String.valueOf(key), item));
+        return result;
+    }
+
+    private List<String> parseStringList(String json) {
+        if (json == null || json.isBlank()) {
+            return Collections.emptyList();
+        }
+        try {
+            List<String> parsed = objectMapper.readValue(
+                    json,
+                    new TypeReference<List<String>>() {}
+            );
+            return parsed == null ? Collections.emptyList() : parsed;
+        } catch (Exception e) {
+            return Collections.emptyList();
         }
     }
 

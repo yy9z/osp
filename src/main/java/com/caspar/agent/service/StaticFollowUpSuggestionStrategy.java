@@ -35,6 +35,7 @@ public class StaticFollowUpSuggestionStrategy implements FollowUpSuggestionStrat
             case "SECONDHAND_PUBLISH" -> Arrays.asList("查看我的在售商品", "修改价格", "下架商品");
             case "DORM_QUERY" -> Arrays.asList("查看宿舍成员", "完善宿舍信息", "发起报修");
             case "MESSAGE_QUERY" -> Arrays.asList("查看未读消息", "按类型筛选通知", "清空已读通知");
+            case "CAMPUS_KNOWLEDGE" -> Arrays.asList("查看其他平台流程", "了解校园事务规则", "查询常见问题");
             default -> Collections.emptyList();
         };
     }

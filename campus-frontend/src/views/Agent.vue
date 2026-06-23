@@ -67,6 +67,7 @@
           :loading="agentStore.loading"
           class="chat-area"
           @send="handleSend"
+          @confirm="handleConfirmation"
         />
         <AgentInputBar
           :loading="agentStore.loading"
@@ -103,6 +104,10 @@ onMounted(async () => {
 
 async function handleSend(message) {
   await agentStore.sendMessage(message)
+}
+
+async function handleConfirmation(payload) {
+  await agentStore.sendConfirmation(payload)
 }
 
 async function handleNewSession() {

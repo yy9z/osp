@@ -2,9 +2,10 @@ package com.caspar.agent.tool;
 
 import com.caspar.agent.model.ToolArgs;
 import com.caspar.agent.model.ToolResult;
-import com.caspar.entity.LostFound;
+import com.caspar.entity.dto.LostFoundPublishDTO;
 import com.caspar.entity.dto.LostFoundVO;
 import com.caspar.mapper.LostFoundMapper;
+import com.caspar.service.LostFoundService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -25,6 +26,7 @@ import java.util.Map;
 public class LostFoundTool implements AgentTool {
 
     private final LostFoundMapper lostFoundMapper;
+    private final LostFoundService lostFoundService;
 
     @Override
     public String getName() {
@@ -45,28 +47,24 @@ public class LostFoundTool implements AgentTool {
         String location  = getString(params, "location");
         String desc      = getString(params, "description");
 
-        LostFound lf = new LostFound();
-        lf.setType(type);
-        lf.setTitle(itemName);
-        lf.setDescription(desc);
-        lf.setLocation(location);
-        lf.setStatus("OPEN");
-        lf.setPublisherId(userId);
-        lf.setCreateTime(LocalDateTime.now());
-        lf.setUpdateTime(LocalDateTime.now());
-
         // 构造标题 = 物品名(颜色)
         String fullTitle = itemName + (color != null ? "（" + color + "）" : "");
-        lf.setTitle(fullTitle);
 
         try {
-            lostFoundMapper.insert(lf);
+            LostFoundPublishDTO publishDTO = new LostFoundPublishDTO();
+            publishDTO.setType(type);
+            publishDTO.setTitle(fullTitle);
+            publishDTO.setDescription(desc);
+            publishDTO.setCategory("OTHER");
+            publishDTO.setLocation(location == null ? "地点待补充" : location);
+            publishDTO.setLostTime(LocalDateTime.now());
+            Long recordId = lostFoundService.publish(userId, publishDTO);
 
             // 相似度计算（设计文档公式）
             // score = 0.4*name_sim + 0.2*color_match + 0.25*location_match + 0.15*time_proximity
             String oppositeType = "LOST".equals(type) ? "FOUND" : "LOST";
             List<LostFoundVO> candidatesVO =
-                    lostFoundMapper.selectList(oppositeType, null, null, 0, 20);
+                    lostFoundMapper.selectAllList(oppositeType, null, null, "OPEN", 0, 20);
 
             List<Map<String, Object>> matched = new ArrayList<>();
             for (LostFoundVO c : candidatesVO) {
@@ -87,7 +85,7 @@ public class LostFoundTool implements AgentTool {
             if (matched.size() > 5) matched = matched.subList(0, 5);
 
             Map<String, Object> data = new HashMap<>();
-            data.put("recordId", lf.getId());
+            data.put("recordId", recordId);
             data.put("type", type);
             data.put("title", fullTitle);
             data.put("candidates", matched);

@@ -4,6 +4,7 @@ import com.caspar.common.PageResult;
 import com.caspar.common.Result;
 import com.caspar.entity.dto.LostFoundVO;
 import com.caspar.mapper.LostFoundMapper;
+import com.caspar.service.LostFoundService;
 import com.caspar.util.PaginationUtils;
 import com.caspar.util.SecurityUtils;
 import jakarta.validation.Valid;
@@ -19,6 +20,9 @@ public class LostFoundAdminController {
 
     @Autowired
     private LostFoundMapper lostFoundMapper;
+
+    @Autowired
+    private LostFoundService lostFoundService;
 
     @GetMapping("/all")
     public Result<PageResult<LostFoundVO>> getAllList(
@@ -55,9 +59,12 @@ public class LostFoundAdminController {
         }
 
         try {
-            lostFoundMapper.updateStatus(id, "REMOVED");
-            lostFoundMapper.updateRemoveReason(id, request.getReason());
+            if (!lostFoundService.adminRemove(id, request.getReason())) {
+                return Result.error("操作失败");
+            }
             return Result.success("已下架", null);
+        } catch (IllegalArgumentException e) {
+            return Result.badRequest(e.getMessage());
         } catch (Exception e) {
             org.slf4j.LoggerFactory.getLogger(getClass()).error("controller={} error={}", getClass().getSimpleName(), e.getMessage(), e);
             return Result.error("操作失败");

@@ -226,6 +226,7 @@ public class ToolExecutorService {
             case "navigation", "navigation_v2" -> "ROUTE";
             case "message_query" -> "MESSAGE";
             case "campus_tips" -> "PROACTIVE_TIPS";
+            case "campus_knowledge_query" -> "KNOWLEDGE";
             default -> "INFO";
         };
     }

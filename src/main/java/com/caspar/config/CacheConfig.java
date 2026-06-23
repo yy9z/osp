@@ -20,7 +20,10 @@ public class CacheConfig {
     @Bean
     public RedisCacheConfiguration redisCacheConfiguration(ObjectMapper objectMapper) {
         GenericJackson2JsonRedisSerializer valueSerializer =
-                new GenericJackson2JsonRedisSerializer(objectMapper.copy());
+                GenericJackson2JsonRedisSerializer.builder()
+                        .objectMapper(objectMapper.copy())
+                        .defaultTyping(true)
+                        .build();
 
         return RedisCacheConfiguration.defaultCacheConfig()
                 .serializeKeysWith(RedisSerializationContext.SerializationPair.fromSerializer(new StringRedisSerializer()))

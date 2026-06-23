@@ -5,16 +5,16 @@
     <!-- 基础列 -->
     <sql id="Base_Column_List">
         l.id, l.type, l.title, l.description, l.category, l.images,
-        l.location, l.reward, l.status, l.publisher_id,
+        l.location, l.lost_time, l.reward, l.contact, l.status, l.publisher_id,
         l.create_time, l.update_time
     </sql>
 
     <!-- 关联查询列 -->
     <sql id="Detail_Column_List">
         l.id, l.type, l.title, l.description, l.category, l.images,
-        l.location, l.reward, l.status, l.publisher_id,
+        l.location, l.lost_time, l.reward, l.status, l.publisher_id,
         l.create_time, l.update_time,
-        u.username as publisher_name, u.phone as publisher_phone
+        u.username as publisher_name
     </sql>
 
     <!-- 结果映射 -->
@@ -26,7 +26,9 @@
         <result column="category" property="category"/>
         <result column="images" property="images"/>
         <result column="location" property="location"/>
+        <result column="lost_time" property="lostTime"/>
         <result column="reward" property="reward"/>
+        <result column="contact" property="contact"/>
         <result column="status" property="status"/>
         <result column="publisher_id" property="publisherId"/>
         <result column="create_time" property="createTime"/>
@@ -42,11 +44,11 @@
         <result column="category" property="category"/>
         <result column="images" property="images"/>
         <result column="location" property="location"/>
+        <result column="lost_time" property="lostTime"/>
         <result column="reward" property="reward"/>
         <result column="status" property="status"/>
         <result column="publisher_id" property="publisherId"/>
         <result column="publisher_name" property="publisherName"/>
-        <result column="publisher_phone" property="publisherPhone"/>
         <result column="create_time" property="createTime"/>
         <result column="update_time" property="updateTime"/>
     </resultMap>
@@ -61,10 +63,27 @@
         <result column="create_time" property="createTime"/>
     </resultMap>
 
+    <resultMap id="ClaimVOResultMap" type="com.caspar.entity.dto.LostFoundClaimVO">
+        <id column="id" property="id"/>
+        <result column="lostfound_id" property="lostfoundId"/>
+        <result column="claimer_id" property="claimerId"/>
+        <result column="claimer_name" property="claimerName"/>
+        <result column="claimer_phone" property="claimerPhone"/>
+        <result column="message" property="message"/>
+        <result column="status" property="status"/>
+        <result column="create_time" property="createTime"/>
+    </resultMap>
+
     <!-- 插入失物招领信息 -->
     <insert id="insert" parameterType="com.caspar.entity.LostFound" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO lostfound (type, title, description, category, images, location, reward, status, publisher_id)
-        VALUES (#{type}, #{title}, #{description}, #{category}, #{images}, #{location}, #{reward}, #{status}, #{publisherId})
+        INSERT INTO lostfound (
+            type, title, description, category, images, location, lost_time,
+            reward, contact, status, publisher_id
+        )
+        VALUES (
+            #{type}, #{title}, #{description}, #{category}, #{images}, #{location}, #{lostTime},
+            #{reward}, #{contact}, #{status}, #{publisherId}
+        )
     </insert>
 
     <!-- 更新失物招领信息 -->
@@ -77,7 +96,9 @@
             <if test="category != null">category = #{category},</if>
             <if test="images != null">images = #{images},</if>
             <if test="location != null">location = #{location},</if>
+            <if test="lostTime != null">lost_time = #{lostTime},</if>
             <if test="reward != null">reward = #{reward},</if>
+            <if test="contact != null">contact = #{contact},</if>
             <if test="status != null">status = #{status},</if>
         </set>
         WHERE id = #{id}
@@ -100,12 +121,13 @@
 
     <!-- 查询列表 -->
     <select id="selectList" resultMap="VOResultMap">
-        SELECT l.id, l.type, l.title, l.category, l.images,
-               l.location, l.reward, l.status, l.publisher_id, l.create_time,
+        SELECT l.id, l.type, l.title, l.description, l.category, l.images,
+               l.location, l.lost_time, l.reward, l.status, l.publisher_id, l.create_time,
                u.username as publisher_name
         FROM lostfound l
         LEFT JOIN user u ON l.publisher_id = u.user_id
         <where>
+            l.status IN ('OPEN', 'RESOLVED')
             <if test="type != null and type != ''">
                 AND l.type = #{type}
             </if>
@@ -125,6 +147,7 @@
         SELECT COUNT(*)
         FROM lostfound l
         <where>
+            l.status IN ('OPEN', 'RESOLVED')
             <if test="type != null and type != ''">
                 AND l.type = #{type}
             </if>
@@ -139,8 +162,8 @@
 
     <!-- 查询我的发布 -->
     <select id="selectMyList" resultMap="VOResultMap">
-        SELECT l.id, l.type, l.title, l.category, l.images,
-               l.location, l.reward, l.status, l.publisher_id, l.create_time,
+        SELECT l.id, l.type, l.title, l.description, l.category, l.images,
+               l.location, l.lost_time, l.reward, l.status, l.publisher_id, l.create_time,
                u.username as publisher_name
         FROM lostfound l
         LEFT JOIN user u ON l.publisher_id = u.user_id
@@ -176,6 +199,13 @@
         UPDATE lostfound SET status = #{status} WHERE id = #{id}
     </update>
 
+    <update id="updateStatusIfCurrent">
+        UPDATE lostfound
+        SET status = #{status}
+        WHERE id = #{id}
+          AND status = #{currentStatus}
+    </update>
+
     <!-- 插入认领记录 -->
     <insert id="insertClaim" parameterType="com.caspar.entity.LostFoundClaim" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO lostfound_claim (lostfound_id, claimer_id, message, status)
@@ -183,17 +213,56 @@
     </insert>
 
     <!-- 查询认领记录 -->
-    <select id="selectClaimsByLostFoundId" resultMap="ClaimResultMap">
-        SELECT lc.id, lc.lostfound_id, lc.claimer_id, lc.message, lc.status, lc.create_time
+    <select id="selectClaimsByLostFoundId" resultMap="ClaimVOResultMap">
+        SELECT lc.id, lc.lostfound_id, lc.claimer_id, lc.message, lc.status, lc.create_time,
+               COALESCE(u.real_name, u.username) AS claimer_name,
+               u.phone AS claimer_phone
         FROM lostfound_claim lc
+        LEFT JOIN user u ON lc.claimer_id = u.user_id
         WHERE lc.lostfound_id = #{lostfoundId}
         ORDER BY lc.create_time DESC
+    </select>
+
+    <select id="findClaimById" resultMap="ClaimVOResultMap">
+        SELECT lc.id, lc.lostfound_id, lc.claimer_id, lc.message, lc.status, lc.create_time,
+               COALESCE(u.real_name, u.username) AS claimer_name,
+               u.phone AS claimer_phone
+        FROM lostfound_claim lc
+        LEFT JOIN user u ON lc.claimer_id = u.user_id
+        WHERE lc.id = #{id}
     </select>
 
     <!-- 更新认领状态 -->
     <update id="updateClaimStatus">
         UPDATE lostfound_claim SET status = #{status} WHERE id = #{id}
     </update>
+
+    <update id="updatePendingClaimStatus">
+        UPDATE lostfound_claim
+        SET status = #{status}
+        WHERE id = #{id}
+          AND lostfound_id = #{lostfoundId}
+          AND status = 'PENDING'
+    </update>
+
+    <update id="rejectOtherPendingClaims">
+        UPDATE lostfound_claim
+        SET status = 'REJECTED'
+        WHERE lostfound_id = #{lostfoundId}
+          AND id != #{approvedClaimId}
+          AND status = 'PENDING'
+    </update>
+
+    <update id="rejectAllPendingClaims">
+        UPDATE lostfound_claim
+        SET status = 'REJECTED'
+        WHERE lostfound_id = #{lostfoundId}
+          AND status = 'PENDING'
+    </update>
+
+    <delete id="deleteClaimsByLostFoundId">
+        DELETE FROM lostfound_claim WHERE lostfound_id = #{lostfoundId}
+    </delete>
 
     <!-- 检查是否已认领 -->
     <select id="countClaimsByLostFoundIdAndClaimerId" resultType="java.lang.Integer">
@@ -204,8 +273,8 @@
 
     <!-- 查询所有列表（管理员） -->
     <select id="selectAllList" resultMap="VOResultMap">
-        SELECT l.id, l.type, l.title, l.category, l.images,
-               l.location, l.reward, l.status, l.publisher_id, l.create_time,
+        SELECT l.id, l.type, l.title, l.description, l.category, l.images,
+               l.location, l.lost_time, l.reward, l.status, l.publisher_id, l.create_time,
                u.username as publisher_name
         FROM lostfound l
         LEFT JOIN user u ON l.publisher_id = u.user_id
@@ -251,5 +320,12 @@
     <update id="updateRemoveReason">
         UPDATE lostfound SET remove_reason = #{reason} WHERE id = #{id}
     </update>
+
+    <select id="findContactById" resultType="java.lang.String">
+        SELECT COALESCE(NULLIF(TRIM(l.contact), ''), u.phone)
+        FROM lostfound l
+        LEFT JOIN user u ON l.publisher_id = u.user_id
+        WHERE l.id = #{id}
+    </select>
 
 </mapper>

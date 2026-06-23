@@ -111,6 +111,40 @@
         </if>
     </select>
 
+    <select id="selectLatestSessionLogs" resultMap="AgentLogResultMap">
+        SELECT id, session_id, user_id, turn, user_input, intent, slots, tools_used,
+               response_payload, reply, success, error_msg, cost_ms, created_at
+        FROM (
+            SELECT id, session_id, user_id, turn, user_input, intent, slots, tools_used,
+                   response_payload, reply, success, error_msg, cost_ms, created_at
+            FROM agent_log
+            WHERE user_id = #{userId}
+              AND session_id = #{sessionId}
+            ORDER BY id DESC
+            <if test="limit != null">
+                LIMIT #{limit}
+            </if>
+        ) recent_logs
+        ORDER BY id ASC
+    </select>
+
+    <select id="selectLatestSessionLogsLegacy" resultMap="AgentLogResultMap">
+        SELECT id, session_id, user_id, turn, user_input, intent, slots, tools_used,
+               reply, success, error_msg, cost_ms, created_at
+        FROM (
+            SELECT id, session_id, user_id, turn, user_input, intent, slots, tools_used,
+                   reply, success, error_msg, cost_ms, created_at
+            FROM agent_log
+            WHERE user_id = #{userId}
+              AND session_id = #{sessionId}
+            ORDER BY id DESC
+            <if test="limit != null">
+                LIMIT #{limit}
+            </if>
+        ) recent_logs
+        ORDER BY id ASC
+    </select>
+
     <delete id="deleteSessionLogs">
         DELETE FROM agent_log
         WHERE user_id = #{userId}

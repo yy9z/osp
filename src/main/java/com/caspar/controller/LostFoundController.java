@@ -2,7 +2,8 @@ package com.caspar.controller;
 
 import com.caspar.common.PageResult;
 import com.caspar.common.Result;
-import com.caspar.entity.LostFoundClaim;
+import com.caspar.entity.dto.LostFoundClaimVO;
+import com.caspar.entity.dto.LostFoundContactVO;
 import com.caspar.entity.dto.LostFoundMatchVO;
 import com.caspar.entity.dto.LostFoundClaimDTO;
 import com.caspar.entity.dto.LostFoundPublishDTO;
@@ -120,7 +121,7 @@ public class LostFoundController {
      * 需要认证，仅发布者可以查看
      */
     @GetMapping("/{id}/claims")
-    public Result<List<LostFoundClaim>> getClaims(@PathVariable Long id) {
+    public Result<List<LostFoundClaimVO>> getClaims(@PathVariable Long id) {
         Long userId = SecurityUtils.getCurrentUserId();
         if (userId == null) {
             return Result.unauthorized();
@@ -133,7 +134,7 @@ public class LostFoundController {
                 return Result.forbidden();
             }
 
-            List<LostFoundClaim> claims = lostFoundService.getClaims(id);
+            List<LostFoundClaimVO> claims = lostFoundService.getClaims(id);
             return Result.success(claims);
         } catch (IllegalArgumentException e) {
             return Result.badRequest(e.getMessage());
@@ -141,6 +142,41 @@ public class LostFoundController {
             log.error("获取认领记录失败, id={}, userId={}", id, userId, e);
             return Result.error("获取认领记录失败");
         }
+    }
+
+    /**
+     * 登录后按需获取联系方式，避免在公开详情中暴露手机号。
+     */
+    @GetMapping("/{id}/contact")
+    public Result<LostFoundContactVO> getContact(@PathVariable Long id) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        if (userId == null) {
+            return Result.unauthorized();
+        }
+        try {
+            return Result.success(lostFoundService.getContact(id));
+        } catch (IllegalArgumentException e) {
+            return Result.badRequest(e.getMessage());
+        } catch (Exception e) {
+            log.error("获取失物招领联系方式失败, id={}, userId={}", id, userId, e);
+            return Result.error("获取联系方式失败");
+        }
+    }
+
+    /**
+     * 发布者批准认领申请。
+     */
+    @PutMapping("/{id}/claims/{claimId}/approve")
+    public Result<Void> approveClaim(@PathVariable Long id, @PathVariable Long claimId) {
+        return reviewClaim(id, claimId, true);
+    }
+
+    /**
+     * 发布者拒绝认领申请。
+     */
+    @PutMapping("/{id}/claims/{claimId}/reject")
+    public Result<Void> rejectClaim(@PathVariable Long id, @PathVariable Long claimId) {
+        return reviewClaim(id, claimId, false);
     }
 
     /**
@@ -235,6 +271,23 @@ public class LostFoundController {
         } catch (Exception e) {
             log.error("获取失物招领智能匹配失败, id={}, limit={}", id, limit, e);
             return Result.error("获取智能匹配失败");
+        }
+    }
+
+    private Result<Void> reviewClaim(Long id, Long claimId, boolean approve) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        if (userId == null) {
+            return Result.unauthorized();
+        }
+        try {
+            lostFoundService.reviewClaim(id, claimId, userId, approve);
+            return Result.success(approve ? "已批准认领申请" : "已拒绝认领申请", null);
+        } catch (IllegalArgumentException e) {
+            return Result.badRequest(e.getMessage());
+        } catch (Exception e) {
+            log.error("处理认领申请失败, id={}, claimId={}, userId={}, approve={}",
+                    id, claimId, userId, approve, e);
+            return Result.error("处理认领申请失败");
         }
     }
 

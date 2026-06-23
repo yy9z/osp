@@ -6,19 +6,24 @@ import com.caspar.agent.model.FunctionCallPlan;
 import com.caspar.agent.model.IntentResult;
 import com.caspar.agent.model.LlmMessage;
 import com.caspar.agent.model.SlotResult;
+import com.caspar.agent.registry.AgentToolCatalog;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Legacy Function Calling 规划服务。
@@ -32,83 +37,20 @@ import java.util.Set;
 public class FunctionCallingPlannerService {
 
     private static final int MAX_CONTEXT_MESSAGES = 8;
-
-    private static final Map<String, String> INTENT_TO_TOOL = Map.of(
-            "DORM_REPAIR", "dorm_repair",
-            "DORM_QUERY", "dorm_query",
-            "REPAIR_QUERY", "repair_query",
-            "SECONDHAND_SEARCH", "secondhand_search",
-            "SECONDHAND_PUBLISH", "secondhand_publish",
-            "LOSTFOUND_LOST", "lostfound_lost",
-            "LOSTFOUND_FOUND", "lostfound_found",
-            "NAVIGATION", "navigation_v2",
-            "MESSAGE_QUERY", "message_query",
-            "CAMPUS_TIPS", "campus_tips"
-    );
-
-    private static final Map<String, List<String>> REQUIRED_SLOTS = Map.of(
-            "DORM_REPAIR", List.of("fault_type"),
-            "DORM_QUERY", List.of(),
-            "REPAIR_QUERY", List.of(),
-            "SECONDHAND_SEARCH", List.of(),
-            "SECONDHAND_PUBLISH", List.of("title", "category", "price"),
-            "LOSTFOUND_LOST", List.of("item_name"),
-            "LOSTFOUND_FOUND", List.of("item_name"),
-            "NAVIGATION", List.of("destination"),
-            "MESSAGE_QUERY", List.of(),
-            "CAMPUS_TIPS", List.of()
-    );
-
-    private static final Map<String, String> SLOT_QUESTIONS = Map.of(
-            "fault_type", "好的，请问是什么故障？（空调/灯/网络/门锁/水管/其他）",
-            "dorm_no", "请问您的宿舍号是多少？",
-            "item_name", "请描述一下物品名称是什么？",
-            "destination", "请问您要去哪里？",
-            "campus", "中科大有多个校区，请问您想去哪个校区？（东校区/西校区/南校区/中校区/高新校区）",
-            "title", "请输入商品的标题：",
-            "category", "请选择分类：数码/书籍/生活/服装/其他",
-            "price", "请输入价格（元）："
-    );
+    private static final Pattern NUMBER_PATTERN = Pattern.compile("\\d+(?:\\.\\d+)?");
 
     private static final Set<String> RESERVED_ARGUMENT_KEYS = Set.of("userId", "user_id", "token", "authorization");
 
-    private static final String SYSTEM_PROMPT = """
+    private static final String SYSTEM_PROMPT_TEMPLATE = """
             你是高校校园智能事务平台的 Function Calling 规划器。
             你必须一次性完成三件事：识别意图、抽取函数参数、选择要调用的本地函数。
             仅返回 JSON，不要输出其他文字，不要添加 markdown 代码块。
 
             可用函数：
-            1. dorm_repair：宿舍报修
-               arguments: fault_type, dorm_no, description
-               required: fault_type
-            2. dorm_query：查询我的宿舍信息
-               arguments: {}
-            3. repair_query：查询报修工单
-               arguments: status, keyword
-            4. secondhand_search：搜索/推荐二手商品
-               arguments: keyword, category, max_price, sort_preference
-            5. secondhand_publish：发布二手商品
-               arguments: title, category, price, description, condition
-               required: title, category, price
-            6. lostfound_lost：发布寻物
-               arguments: item_name, color, location, time, description
-               required: item_name
-            7. lostfound_found：发布招领
-               arguments: item_name, color, location, time, description
-               required: item_name
-            8. navigation_v2：校园导航
-               arguments: destination, origin, campus, travel_mode, preferences, waypoints,
-                          taskScene, timeContext, timeSlot, urgencyMinutes, destinationType,
-                          userLat, userLng, originalQuery
-               required: destination
-            9. message_query：查看消息/通知
-               arguments: keyword, unread_only
-            10. campus_tips：查看当前待办、主动提醒、需要优先处理的校园事务
-               arguments: {}
+            %s
 
             意图名称必须是：
-            DORM_REPAIR, DORM_QUERY, REPAIR_QUERY, SECONDHAND_SEARCH, SECONDHAND_PUBLISH,
-            LOSTFOUND_LOST, LOSTFOUND_FOUND, NAVIGATION, MESSAGE_QUERY, CAMPUS_TIPS, UNKNOWN。
+            %s, UNKNOWN。
 
             输出 JSON 格式：
             {
@@ -136,6 +78,7 @@ public class FunctionCallingPlannerService {
             - 只抽取用户明确表达或会话状态中已经存在的参数，不要编造价格、地点、宿舍号。
             - 导航相关表达，如图书馆、食堂、教学楼、校区、怎么走、从哪到哪，优先使用 NAVIGATION / navigation_v2。
             - “有什么待办/提醒/要处理/优先事项/今天需要看什么”等表达，使用 CAMPUS_TIPS / campus_tips。
+            - 询问平台怎么用、校园事务流程、规则、注意事项或常见问题时，使用 CAMPUS_KNOWLEDGE / campus_knowledge_query，并把原问题放入 question。
             - 二手商品搜索中，“50元以内的台灯”应输出 keyword=台灯, max_price=50。
             """;
 
@@ -144,17 +87,24 @@ public class FunctionCallingPlannerService {
     private final IntentService intentService;
     private final SlotFillingService slotFillingService;
     private final PlannerService plannerService;
+    private final AgentToolCatalog toolCatalog;
+    private final NativeToolCallingPlannerService nativeToolCallingPlannerService;
 
     public FunctionCallPlan plan(String userInput, AgentSession session) {
+        Optional<FunctionCallPlan> nativePlan = nativeToolCallingPlannerService.tryPlan(userInput, session);
+        if (nativePlan.isPresent()) {
+            return nativePlan.get();
+        }
+
         long startTime = System.currentTimeMillis();
         try {
             List<LlmMessage> messages = new ArrayList<>();
-            messages.add(LlmMessage.system(SYSTEM_PROMPT));
+            messages.add(LlmMessage.system(buildSystemPrompt()));
             appendRecentHistory(messages, userInput, session == null ? List.of() : session.getHistory());
             messages.add(LlmMessage.user(buildStatePayload(userInput, session)));
 
             String raw = llmClient.chat(messages);
-            FunctionCallPlan plan = parsePlan(raw, session);
+            FunctionCallPlan plan = parsePlan(raw, userInput, session);
             log.info("Function Calling规划完成, intent={}, tools={}, missing={}, 耗时={}ms",
                     plan.getIntent(), plan.getToolNames(), plan.getMissingSlots(),
                     System.currentTimeMillis() - startTime);
@@ -166,7 +116,7 @@ public class FunctionCallingPlannerService {
         }
     }
 
-    private FunctionCallPlan parsePlan(String raw, AgentSession session) throws Exception {
+    private FunctionCallPlan parsePlan(String raw, String userInput, AgentSession session) throws Exception {
         Map<String, Object> parsed = objectMapper.readValue(normalizeJsonContent(raw), new TypeReference<>() {});
         FunctionCallPlan plan = new FunctionCallPlan();
 
@@ -184,9 +134,11 @@ public class FunctionCallingPlannerService {
         normalizeArgumentAliases(arguments);
         sanitizeArguments(arguments);
         mergedSlots.putAll(arguments);
+        mergePendingSlotAnswer(mergedSlots, userInput, session);
+        populateKnowledgeQuestion(intent, mergedSlots, userInput);
 
         if (!"UNKNOWN".equals(intent) && toolNames.isEmpty()) {
-            String defaultTool = INTENT_TO_TOOL.get(intent);
+            String defaultTool = toolCatalog.getToolName(intent);
             if (defaultTool != null) {
                 toolNames = List.of(defaultTool);
             }
@@ -218,7 +170,9 @@ public class FunctionCallingPlannerService {
 
             SlotResult slotResult = slotFillingService.extractSlots(intent, userInput, safeSession);
             Map<String, Object> slots = slotResult.getSlots() == null ? Map.of() : slotResult.getSlots();
-            plan.setSlots(new HashMap<>(slots));
+            Map<String, Object> normalizedSlots = new HashMap<>(slots);
+            populateKnowledgeQuestion(intent, normalizedSlots, userInput);
+            plan.setSlots(normalizedSlots);
             plan.setMissingSlots(slotResult.getMissingSlots() == null ? List.of() : slotResult.getMissingSlots());
             plan.setAskQuestion(slotResult.getAskQuestion());
             plan.setToolNames(plannerService.plan(intent, slots));
@@ -255,6 +209,17 @@ public class FunctionCallingPlannerService {
             } else {
                 messages.add(LlmMessage.user(content));
             }
+        }
+    }
+
+    private void populateKnowledgeQuestion(String intent, Map<String, Object> slots, String userInput) {
+        if (!"CAMPUS_KNOWLEDGE".equals(intent) || slots == null) {
+            return;
+        }
+        Object existing = slots.get("question");
+        if ((existing == null || String.valueOf(existing).isBlank())
+                && userInput != null && !userInput.isBlank()) {
+            slots.put("question", userInput.trim());
         }
     }
 
@@ -348,7 +313,7 @@ public class FunctionCallingPlannerService {
         if (name == null || name.isBlank()) {
             return;
         }
-        if (INTENT_TO_TOOL.containsValue(name)) {
+        if (toolCatalog.hasTool(name)) {
             names.add(name);
         }
     }
@@ -358,6 +323,39 @@ public class FunctionCallingPlannerService {
             arguments.remove(key);
         }
         arguments.entrySet().removeIf(e -> e.getValue() == null || String.valueOf(e.getValue()).isBlank());
+    }
+
+    /**
+     * Bind a direct answer to the slot explicitly requested in the previous turn.
+     * This keeps multi-turn forms deterministic when the model omits the answer.
+     */
+    private void mergePendingSlotAnswer(Map<String, Object> slots, String userInput, AgentSession session) {
+        if (session == null || session.getPendingSlots() == null || session.getPendingSlots().isEmpty()
+                || userInput == null || userInput.isBlank()) {
+            return;
+        }
+
+        String pendingSlot = session.getPendingSlots().get(0);
+        Object existingValue = slots.get(pendingSlot);
+        if (existingValue != null && !String.valueOf(existingValue).isBlank()) {
+            return;
+        }
+
+        Object value = extractDirectSlotValue(pendingSlot, userInput.trim());
+        if (value != null && !String.valueOf(value).isBlank()) {
+            slots.put(pendingSlot, value);
+        }
+    }
+
+    private Object extractDirectSlotValue(String slot, String text) {
+        if ("price".equals(slot)) {
+            Matcher matcher = NUMBER_PATTERN.matcher(text);
+            return matcher.find() ? new BigDecimal(matcher.group()) : null;
+        }
+        return switch (slot) {
+            case "title", "category", "fault_type", "dorm_no", "item_name", "destination", "campus" -> text;
+            default -> null;
+        };
     }
 
     private void normalizeArgumentAliases(Map<String, Object> arguments) {
@@ -378,7 +376,7 @@ public class FunctionCallingPlannerService {
     }
 
     private List<String> findMissingRequiredSlots(String intent, Map<String, Object> slots) {
-        List<String> required = REQUIRED_SLOTS.getOrDefault(intent, List.of());
+        List<String> required = toolCatalog.getRequiredSlots(intent);
         List<String> missing = new ArrayList<>();
         for (String slot : required) {
             Object value = slots.get(slot);
@@ -393,7 +391,7 @@ public class FunctionCallingPlannerService {
         if (missingSlots == null || missingSlots.isEmpty()) {
             return null;
         }
-        return SLOT_QUESTIONS.getOrDefault(missingSlots.get(0), "请提供更多信息：");
+        return toolCatalog.getSlotQuestion(missingSlots.get(0));
     }
 
     private String normalizeJsonContent(String raw) {
@@ -427,10 +425,17 @@ public class FunctionCallingPlannerService {
             return "UNKNOWN";
         }
         String normalized = intent.trim().toUpperCase(Locale.ROOT);
-        if (INTENT_TO_TOOL.containsKey(normalized) || "UNKNOWN".equals(normalized)) {
+        if (toolCatalog.hasIntent(normalized) || "UNKNOWN".equals(normalized)) {
             return normalized;
         }
         return "UNKNOWN";
+    }
+
+    private String buildSystemPrompt() {
+        return SYSTEM_PROMPT_TEMPLATE.formatted(
+                toolCatalog.buildPlannerFunctionPrompt(),
+                toolCatalog.buildSupportedIntentPrompt()
+        );
     }
 
     private String asString(Object value) {

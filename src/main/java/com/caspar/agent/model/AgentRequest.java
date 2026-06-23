@@ -12,4 +12,8 @@ public class AgentRequest {
     private String message;
     /** 可选上下文（如当前位置） */
     private Map<String, Object> context;
+    /** 待确认写操作的唯一标识 */
+    private String confirmationId;
+    /** APPROVE / REJECT；也兼容用户直接输入“确认执行”或“取消” */
+    private String confirmationDecision;
 }

@@ -17,7 +17,6 @@ public class LostFoundMatchVO {
     private String location;
     private String status;
     private String publisherName;
-    private String publisherPhone;
     private String images;
     private LocalDateTime createTime;
 

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-OSP (高校校园一站式平台) — a university campus all-in-one platform. Spring Boot 3.4 backend + Vue 3 frontend SPA. The platform includes an AI agent (campus assistant) that handles natural language queries for navigation, dormitory, lost-and-found, secondhand trading, and messaging.
+OSP (高校校园一站式平台) — a university campus all-in-one platform. Spring Boot 3.5 backend + Vue 3 frontend SPA. The platform includes an AI agent (campus assistant) that handles natural language queries for navigation, dormitory, lost-and-found, secondhand trading, and messaging.
 
 ## Build & Run
 
@@ -20,6 +20,8 @@ Key environment variables (set before running):
 - `SPRING_AI_OPENAI_API_KEY` — SiliconFlow API key (OpenAI-compatible)
 - `SPRING_AI_OPENAI_BASE_URL` — defaults to `https://api.siliconflow.cn`
 - `LLM_MODEL` — defaults to `Qwen/Qwen2.5-72B-Instruct`
+- `AGENT_NATIVE_TOOL_CALLING_ENABLED` — enables the read-only native Tool Calling pilot; defaults to `false`
+- `AGENT_GRAPH_REDIS_CHECKPOINT_ENABLED` — persists Graph checkpoints in Redis; defaults to `true`
 - `AMAP_WEB_KEY` — Amap (高德) web API key
 - `ALIYUN_OSS_ACCESS_KEY_ID` / `ALIYUN_OSS_ACCESS_KEY_SECRET` — Aliyun OSS credentials
 
@@ -56,10 +58,14 @@ Standard Spring Boot layered architecture with an additional `agent` module:
 
 ### Agent Module (`agent/`)
 
-The AI campus assistant. Pipeline: Intent → Slot Filling → Planning → Tool Execution → Response Generation.
+The AI campus assistant. Spring AI Alibaba Graph owns the runtime pipeline: Route → Plan → Slot Check → Write Confirmation/Tool Execution → Follow-up/Response.
 
 - `controller/AgentController` — HTTP entry point (`POST /api/agent/chat`)
-- `service/AgentOrchestrator` — Core orchestration: coordinates the full pipeline
+- `framework/CampusAgentGraph` — Compiled state graph with independently testable workflow nodes and conditional edges
+- `framework/CampusAgentExecution` — Immutable request-scoped input carried by the graph
+- `framework/AgentGraphCheckpointConfiguration` — Redis-backed Graph checkpoints with an in-memory fallback
+- `service/AgentWriteConfirmationService` — Safe previews and approval/rejection handling for write tools
+- `service/AgentOrchestrator` — Thin adapter for session preparation, history restoration, graph invocation, and top-level failures
 - `service/IntentService` — LLM-based intent classification
 - `service/SlotFillingService` — Extracts required parameters from user input
 - `service/PlannerService` — Selects which tools to invoke based on intent + slots
@@ -98,5 +104,5 @@ All API paths are under `/api/`. Frontend proxies to backend in dev via Vite con
 - **SiliconFlow** — LLM provider (OpenAI-compatible API) for the agent module
 - **Amap (高德地图)** — Map tiles (frontend) and route planning API (backend)
 - **Aliyun OSS** — File/image storage
-- **Redis** — Agent session management
+- **Redis** — Agent session management and durable Graph checkpoints
 - **MySQL** — Primary database (`campus_platform`)

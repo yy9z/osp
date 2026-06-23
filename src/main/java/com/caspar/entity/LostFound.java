@@ -45,12 +45,22 @@ public class LostFound {
     private String location;
 
     /**
+     * 丢失/拾取时间
+     */
+    private LocalDateTime lostTime;
+
+    /**
      * 悬赏金额
      */
     private BigDecimal reward;
 
     /**
-     * 状态: OPEN, RESOLVED
+     * 发布者为本条信息提供的联系方式
+     */
+    private String contact;
+
+    /**
+     * 状态: OPEN, RESOLVED, REMOVED
      */
     private String status;
 

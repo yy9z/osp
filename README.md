@@ -4,9 +4,9 @@
 
 ## 技术栈
 
-- 后端：Spring Boot 3.4、Java 21、Spring Security、JWT、MyBatis/MyBatis-Plus、MySQL、Redis、Caffeine
+- 后端：Spring Boot 3.5、Java 21、Spring Security、JWT、MyBatis/MyBatis-Plus、MySQL、Redis、Caffeine
 - 前端：Vue 3、Vite、Pinia、Element Plus、Leaflet、高德地图 Web 服务
-- 智能能力：单 Agent + Function Calling，本地 `AgentTool` 业务函数调用，MCP 作为可选扩展通道
+- 智能能力：Spring AI 1.1、Spring AI Alibaba Graph、Function Calling、本地 `AgentTool`、可选原生 Tool Calling 与 MCP 扩展
 
 ## 核心功能
 
@@ -20,7 +20,11 @@
 
 ## 当前亮点
 
-- `AgentOrchestrator` 统一编排 Function Calling、工具执行、回复生成、会话恢复与历史记录。
+- `CampusAgentGraph` 使用状态图编排路由、规划、补槽、工具执行、澄清与响应生成，节点和条件分支可独立测试。
+- Graph 检查点优先持久化到 Redis，写操作可在确认节点暂停，并在服务重启后继续执行；Redis 不可用时自动退回内存检查点。
+- 发布商品、提交报修、发布失物等写工具执行前展示参数预览，只有用户明确确认后才会写入业务数据。
+- `AgentOrchestrator` 只负责会话准备、历史恢复和图执行异常边界，HTTP 返回协议保持不变。
+- `AgentToolCatalog` 统一维护工具 Schema、意图、必填槽位和读写属性，避免多处重复定义。
 - `ToolExecutorService` 支持本地工具并行执行，并保留 MCP 熔断、指标与本地回退能力。
 - `campus_tips` 工具复用首页智能提醒，Agent 可以直接回答“我有什么待办/提醒”。
 - 二手交易详情页的面交建议已联动校园导航，可将推荐面交点一键带入路线规划。
@@ -47,6 +51,7 @@ export SPRING_DATASOURCE_PASSWORD=your_password
 export JWT_SECRET=your_jwt_secret
 export SPRING_AI_OPENAI_API_KEY=your_llm_key
 export AMAP_WEB_KEY=your_amap_key
+export AGENT_GRAPH_REDIS_CHECKPOINT_ENABLED=true
 ```
 
 ### 前端
@@ -62,7 +67,7 @@ npm run dev
 ## 常用验证
 
 ```bash
-./mvnw -q -DskipTests compile
+./mvnw -q test
 
 cd campus-frontend
 npm run build

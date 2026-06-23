@@ -1,13 +1,17 @@
 package com.caspar.agent.model;
 
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 import java.util.List;
 import java.util.Map;
 
 @Data
 @Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class AgentResponse {
     private String sessionId;
     /** 自然语言回复文本 */
@@ -30,4 +34,10 @@ public class AgentResponse {
     private String followUpType;
     /** 结构化追问选项 */
     private List<String> followUpOptions;
+    /** 是否需要用户确认后才能继续执行 */
+    private boolean confirmationRequired;
+    /** 当前待确认操作标识 */
+    private String confirmationId;
+    /** 提供给前端展示的写操作预览 */
+    private Map<String, Object> confirmationPreview;
 }

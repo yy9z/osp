@@ -7,6 +7,7 @@ import com.caspar.agent.rag.RagRetrievalService;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -32,6 +33,9 @@ class CampusKnowledgeToolTest {
         assertEquals(Boolean.TRUE, data.get("hit"));
         assertTrue(String.valueOf(data.get("answerContext")).contains("面交"));
         assertTrue(String.valueOf(data.get("agentSummary")).contains("知识库"));
+        assertTrue(((Number) data.get("topScore")).doubleValue() > 0);
+        assertTrue(data.get("chunks") instanceof List<?> chunks && !chunks.isEmpty() && chunks.size() <= 3);
+        assertTrue(data.get("citations") instanceof List<?> citations && !citations.isEmpty());
     }
 
     @Test

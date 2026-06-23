@@ -46,24 +46,24 @@ const page = ref(1)
 const total = ref(0)
 
 const getStatusType = (status) => {
-  const map = { ACTIVE: 'success', CLAIMED: 'warning', REMOVED: 'info' }
+  const map = { OPEN: 'success', RESOLVED: 'warning', REMOVED: 'info' }
   return map[status] || ''
 }
 
 const getStatusText = (status) => {
-  const map = { ACTIVE: '有效', CLAIMED: '已认领', REMOVED: '已下架' }
+  const map = { OPEN: '进行中', RESOLVED: '已解决', REMOVED: '已下架' }
   return map[status] || status
 }
 
 const loadList = async () => {
   loading.value = true
   try {
-    const res = await request.get('/api/user/lostfound/my', {
+    const res = await request.get('/lostfound/my', {
       params: { page: page.value, size: 10 }
     })
-    if (res.data.code === 200) {
-      list.value = res.data.data.records || []
-      total.value = res.data.data.total || 0
+    if (res.code === 200) {
+      list.value = res.data.records || []
+      total.value = res.data.total || 0
     }
   } catch (error) {
     console.error('加载列表失败:', error)

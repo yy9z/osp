@@ -3,6 +3,8 @@ package com.caspar.service.impl;
 import com.caspar.common.PageResult;
 import com.caspar.entity.LostFound;
 import com.caspar.entity.LostFoundClaim;
+import com.caspar.entity.dto.LostFoundClaimVO;
+import com.caspar.entity.dto.LostFoundContactVO;
 import com.caspar.entity.dto.LostFoundMatchVO;
 import com.caspar.entity.dto.LostFoundPublishDTO;
 import com.caspar.entity.dto.LostFoundVO;
@@ -11,10 +13,11 @@ import com.caspar.service.LostFoundService;
 import com.caspar.util.PaginationUtils;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.cache.annotation.Caching;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,11 +32,16 @@ import java.util.Objects;
 import java.util.Set;
 
 @Service
+@RequiredArgsConstructor
 public class LostFoundServiceImpl implements LostFoundService {
 
-    @Autowired
-    private LostFoundMapper lostFoundMapper;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private static final Set<String> ALLOWED_TYPES = Set.of("LOST", "FOUND");
+    private static final Set<String> ALLOWED_CATEGORIES = Set.of(
+            "ELECTRONICS", "WALLET", "BOOKS", "CLOTHING", "KEYS", "OTHER"
+    );
+
+    private final LostFoundMapper lostFoundMapper;
+    private final ObjectMapper objectMapper;
 
     @Override
     @Transactional
@@ -44,24 +52,28 @@ public class LostFoundServiceImpl implements LostFoundService {
             @CacheEvict(cacheNames = "lostFoundMatches", allEntries = true)
     })
     public Long publish(Long publisherId, LostFoundPublishDTO publishDTO) {
-        if (publishDTO.getType() == null || publishDTO.getType().isEmpty()) {
-            throw new IllegalArgumentException("请选择类型(LOST/FOUND)");
+        String type = normalizeUpper(publishDTO.getType());
+        String category = normalizeUpper(publishDTO.getCategory());
+        if (!ALLOWED_TYPES.contains(type)) {
+            throw new IllegalArgumentException("类型只能是LOST或FOUND");
         }
-        if (publishDTO.getTitle() == null || publishDTO.getTitle().isEmpty()) {
-            throw new IllegalArgumentException("标题不能为空");
-        }
-        if (publishDTO.getCategory() == null || publishDTO.getCategory().isEmpty()) {
-            throw new IllegalArgumentException("请选择分类");
+        if (!ALLOWED_CATEGORIES.contains(category)) {
+            throw new IllegalArgumentException("物品分类不合法");
         }
 
         LostFound lostFound = new LostFound();
-        lostFound.setType(publishDTO.getType());
-        lostFound.setTitle(publishDTO.getTitle());
-        lostFound.setDescription(publishDTO.getDescription());
-        lostFound.setCategory(publishDTO.getCategory());
-        lostFound.setLocation(publishDTO.getLocation());
+        lostFound.setType(type);
+        lostFound.setTitle(publishDTO.getTitle().trim());
+        lostFound.setDescription(trimToNull(publishDTO.getDescription()));
+        lostFound.setCategory(category);
+        lostFound.setLocation(publishDTO.getLocation().trim());
+        lostFound.setLostTime(publishDTO.getLostTime());
         lostFound.setReward(publishDTO.getReward());
+        lostFound.setContact(trimToNull(publishDTO.getContact()));
         if (publishDTO.getImages() != null && !publishDTO.getImages().isEmpty()) {
+            if (publishDTO.getImages().stream().anyMatch(image -> image == null || image.isBlank())) {
+                throw new IllegalArgumentException("图片地址不能为空");
+            }
             try {
                 lostFound.setImages(objectMapper.writeValueAsString(publishDTO.getImages()));
             } catch (JsonProcessingException e) {
@@ -92,7 +104,11 @@ public class LostFoundServiceImpl implements LostFoundService {
     @Override
     @Cacheable(cacheNames = "lostFoundDetail", key = "#id", unless = "#result == null")
     public LostFoundVO getDetail(Long id) {
-        return lostFoundMapper.findDetailById(id);
+        LostFoundVO detail = lostFoundMapper.findDetailById(id);
+        if (detail == null || "REMOVED".equalsIgnoreCase(detail.getStatus())) {
+            throw new IllegalArgumentException("帖子不存在");
+        }
+        return detail;
     }
 
     @Override
@@ -124,6 +140,9 @@ public class LostFoundServiceImpl implements LostFoundService {
         if (!"OPEN".equals(lostFound.getStatus())) {
             throw new IllegalArgumentException("帖子状态不允许认领");
         }
+        if (Objects.equals(lostFound.getPublisherId(), claimerId)) {
+            throw new IllegalArgumentException("不能认领自己发布的信息");
+        }
         if (lostFoundMapper.countClaimsByLostFoundIdAndClaimerId(id, claimerId) > 0) {
             throw new IllegalArgumentException("您已提交过认领申请");
         }
@@ -135,13 +154,65 @@ public class LostFoundServiceImpl implements LostFoundService {
         claim.setStatus("PENDING");
         claim.setCreateTime(LocalDateTime.now());
 
-        lostFoundMapper.insertClaim(claim);
+        try {
+            lostFoundMapper.insertClaim(claim);
+        } catch (DuplicateKeyException e) {
+            throw new IllegalArgumentException("您已提交过认领申请");
+        }
         return true;
     }
 
     @Override
-    public List<LostFoundClaim> getClaims(Long lostfoundId) {
+    public List<LostFoundClaimVO> getClaims(Long lostfoundId) {
         return lostFoundMapper.selectClaimsByLostFoundId(lostfoundId);
+    }
+
+    @Override
+    public LostFoundContactVO getContact(Long id) {
+        LostFound lostFound = lostFoundMapper.findById(id);
+        if (lostFound == null || "REMOVED".equalsIgnoreCase(lostFound.getStatus())) {
+            throw new IllegalArgumentException("帖子不存在");
+        }
+        String contact = lostFoundMapper.findContactById(id);
+        if (contact == null || contact.isBlank()) {
+            throw new IllegalArgumentException("发布者未提供联系方式");
+        }
+        return new LostFoundContactVO(contact);
+    }
+
+    @Override
+    @Transactional
+    @Caching(evict = {
+            @CacheEvict(cacheNames = "lostFoundList", allEntries = true),
+            @CacheEvict(cacheNames = "lostFoundDetail", allEntries = true),
+            @CacheEvict(cacheNames = "lostFoundMyList", allEntries = true),
+            @CacheEvict(cacheNames = "lostFoundMatches", allEntries = true)
+    })
+    public boolean reviewClaim(Long lostfoundId, Long claimId, Long publisherId, boolean approve) {
+        LostFound lostFound = requireOwnedPost(lostfoundId, publisherId);
+        LostFoundClaimVO claim = lostFoundMapper.findClaimById(claimId);
+        if (claim == null || !Objects.equals(claim.getLostfoundId(), lostfoundId)) {
+            throw new IllegalArgumentException("认领申请不存在");
+        }
+        if (!"PENDING".equalsIgnoreCase(claim.getStatus())) {
+            throw new IllegalArgumentException("认领申请已处理");
+        }
+
+        String targetStatus = approve ? "APPROVED" : "REJECTED";
+        if (lostFoundMapper.updatePendingClaimStatus(claimId, lostfoundId, targetStatus) == 0) {
+            throw new IllegalArgumentException("认领申请已处理");
+        }
+
+        if (approve) {
+            if (!"OPEN".equalsIgnoreCase(lostFound.getStatus())) {
+                throw new IllegalArgumentException("帖子状态不允许批准认领");
+            }
+            lostFoundMapper.rejectOtherPendingClaims(lostfoundId, claimId);
+            if (lostFoundMapper.updateStatusIfCurrent(lostfoundId, "RESOLVED", "OPEN") == 0) {
+                throw new IllegalArgumentException("帖子状态已发生变化");
+            }
+        }
+        return true;
     }
 
     @Override
@@ -160,6 +231,7 @@ public class LostFoundServiceImpl implements LostFoundService {
         if (!lostFound.getPublisherId().equals(publisherId)) {
             throw new IllegalArgumentException("无权限操作");
         }
+        lostFoundMapper.deleteClaimsByLostFoundId(id);
         return lostFoundMapper.deleteById(id) > 0;
     }
 
@@ -182,7 +254,34 @@ public class LostFoundServiceImpl implements LostFoundService {
         if (!"OPEN".equals(lostFound.getStatus())) {
             throw new IllegalArgumentException("帖子状态不允许标记");
         }
-        lostFoundMapper.updateStatus(id, "RESOLVED");
+        if (lostFoundMapper.updateStatusIfCurrent(id, "RESOLVED", "OPEN") == 0) {
+            throw new IllegalArgumentException("帖子状态已发生变化");
+        }
+        lostFoundMapper.rejectAllPendingClaims(id);
+        return true;
+    }
+
+    @Override
+    @Transactional
+    @Caching(evict = {
+            @CacheEvict(cacheNames = "lostFoundList", allEntries = true),
+            @CacheEvict(cacheNames = "lostFoundDetail", allEntries = true),
+            @CacheEvict(cacheNames = "lostFoundMyList", allEntries = true),
+            @CacheEvict(cacheNames = "lostFoundMatches", allEntries = true)
+    })
+    public boolean adminRemove(Long id, String reason) {
+        LostFound lostFound = lostFoundMapper.findById(id);
+        if (lostFound == null) {
+            throw new IllegalArgumentException("帖子不存在");
+        }
+        if ("REMOVED".equalsIgnoreCase(lostFound.getStatus())) {
+            throw new IllegalArgumentException("帖子已下架");
+        }
+        if (lostFoundMapper.updateStatus(id, "REMOVED") == 0) {
+            return false;
+        }
+        lostFoundMapper.updateRemoveReason(id, reason.trim());
+        lostFoundMapper.rejectAllPendingClaims(id);
         return true;
     }
 
@@ -248,7 +347,9 @@ public class LostFoundServiceImpl implements LostFoundService {
             reasons.add("地点信息接近");
         }
 
-        int timeScore = timeProximityScore(source.getCreateTime(), candidate.getCreateTime());
+        LocalDateTime sourceTime = source.getLostTime() != null ? source.getLostTime() : source.getCreateTime();
+        LocalDateTime candidateTime = candidate.getLostTime() != null ? candidate.getLostTime() : candidate.getCreateTime();
+        int timeScore = timeProximityScore(sourceTime, candidateTime);
         if (timeScore > 0) {
             score += timeScore;
             reasons.add("发布时间接近");
@@ -262,7 +363,6 @@ public class LostFoundServiceImpl implements LostFoundService {
         match.setLocation(candidate.getLocation());
         match.setStatus(candidate.getStatus());
         match.setPublisherName(candidate.getPublisherName());
-        match.setPublisherPhone(candidate.getPublisherPhone());
         match.setImages(candidate.getImages());
         match.setCreateTime(candidate.getCreateTime());
         match.setMatchScore(Math.min(score, 100));
@@ -340,5 +440,27 @@ public class LostFoundServiceImpl implements LostFoundService {
             }
         }
         return tokens;
+    }
+
+    private LostFound requireOwnedPost(Long id, Long publisherId) {
+        LostFound lostFound = lostFoundMapper.findById(id);
+        if (lostFound == null) {
+            throw new IllegalArgumentException("帖子不存在");
+        }
+        if (!Objects.equals(lostFound.getPublisherId(), publisherId)) {
+            throw new IllegalArgumentException("无权限操作");
+        }
+        return lostFound;
+    }
+
+    private String normalizeUpper(String value) {
+        return value == null ? "" : value.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private String trimToNull(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
     }
 }

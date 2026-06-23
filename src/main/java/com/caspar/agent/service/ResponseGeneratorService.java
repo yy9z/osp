@@ -7,7 +7,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -22,15 +21,6 @@ public class ResponseGeneratorService {
 
     private final LlmClient llmClient;
     private final WebSearchService webSearchService;
-
-    private static final String SYSTEM_PROMPT = """
-            你是一个高校校园智能助手，负责将业务操作结果整理为友好的自然语言回复。
-            当前导航场景默认为中国科学技术大学校园内导航。
-            语气亲切、简洁，使用中文。如有多条结果，请逐条列出。
-            如果结果是在多个校区之间需要澄清，请直接追问用户，不要假装已经完成导航。
-            如果有路线安全分析结果，请特别提醒用户注意安全警告和建议。
-            回复不要超过200字。
-            """;
 
     private static final String UNKNOWN_CHAT_PROMPT = """
             你是校园平台内置助手的通用问答模式。
@@ -56,53 +46,20 @@ public class ResponseGeneratorService {
      * 根据工具执行结果和用户原始输入，生成最终自然语言回复。
      */
     public String generate(String userInput, List<ToolResult> toolResults) {
-        long startTime = System.currentTimeMillis();
         if (toolResults.isEmpty()) {
             return "抱歉，我暂时无法处理您的请求，请稍后再试或直接前往对应功能页面操作。";
+        }
+
+        String allFailedReply = buildAllFailedReply(toolResults);
+        if (allFailedReply != null) {
+            return allFailedReply;
         }
 
         String deterministicReply = buildDeterministicToolReply(toolResults);
         if (deterministicReply != null) {
             return deterministicReply;
         }
-
-        StringBuilder context = new StringBuilder();
-        context.append("用户需求：").append(userInput).append("\n\n");
-        context.append("业务处理结果：\n");
-        for (int i = 0; i < toolResults.size(); i++) {
-            ToolResult r = toolResults.get(i);
-            if (r.isSuccess()) {
-                context.append("✓ ").append(r.getSummary()).append("\n");
-
-                // 新增：提取并展示路线安全分析结果
-                appendSafetyAnalysis(context, r);
-            } else {
-                context.append("✗ ").append(r.getErrorMessage()).append("\n");
-            }
-        }
-
-        try {
-            List<LlmMessage> messages = new ArrayList<>();
-            messages.add(LlmMessage.system(SYSTEM_PROMPT));
-            messages.add(LlmMessage.user(context.toString()));
-            String response = llmClient.chat(messages);
-            log.info("回复生成完成, 耗时={}ms", System.currentTimeMillis() - startTime);
-            return response;
-        } catch (Exception e) {
-            log.warn("回复生成失败，使用摘要回退, 耗时={}ms: {}", System.currentTimeMillis() - startTime, e.getMessage());
-            // LLM 失败时使用工具摘要作为回复
-            StringBuilder fallback = new StringBuilder();
-            for (ToolResult r : toolResults) {
-                if (r.isSuccess()) {
-                    fallback.append(r.getSummary()).append(" ");
-                    // 回退时也包含安全分析
-                    appendSafetyAnalysisFallback(fallback, r);
-                } else {
-                    fallback.append("操作失败：").append(r.getErrorMessage()).append(" ");
-                }
-            }
-            return fallback.toString().trim();
-        }
+        return buildGroundedToolReply(toolResults);
     }
 
     private String buildDeterministicToolReply(List<ToolResult> toolResults) {
@@ -115,10 +72,40 @@ public class ResponseGeneratorService {
         }
 
         Object type = data.get("type");
-        if (!"CAMPUS_TIPS".equals(String.valueOf(type))) {
+        return switch (String.valueOf(type)) {
+            case "CAMPUS_TIPS" -> buildCampusTipsReply(data);
+            case "CAMPUS_KNOWLEDGE" -> buildCampusKnowledgeReply(data);
+            default -> null;
+        };
+    }
+
+    private String buildAllFailedReply(List<ToolResult> toolResults) {
+        if (toolResults.stream().anyMatch(ToolResult::isSuccess)) {
             return null;
         }
-        return buildCampusTipsReply(data);
+        String errors = toolResults.stream()
+                .map(ToolResult::getErrorMessage)
+                .filter(message -> message != null && !message.isBlank())
+                .distinct()
+                .reduce((left, right) -> left + "；" + right)
+                .orElse("相关服务暂不可用");
+        return "抱歉，本次操作未完成：" + errors + "。请稍后重试。";
+    }
+
+    private String buildGroundedToolReply(List<ToolResult> toolResults) {
+        StringBuilder reply = new StringBuilder();
+        for (ToolResult result : toolResults) {
+            if (reply.length() > 0) {
+                reply.append("\n");
+            }
+            if (result.isSuccess()) {
+                reply.append(result.getSummary());
+                appendSafetyAnalysisFallback(reply, result);
+            } else {
+                reply.append("操作失败：").append(result.getErrorMessage());
+            }
+        }
+        return reply.toString().trim();
     }
 
     private String buildCampusTipsReply(Map<?, ?> data) {
@@ -145,59 +132,23 @@ public class ResponseGeneratorService {
         return reply.toString();
     }
 
+    private String buildCampusKnowledgeReply(Map<?, ?> data) {
+        if (!Boolean.TRUE.equals(data.get("hit"))) {
+            return "知识库里暂时没有找到足够相关的说明，请换一种问法，或说明你想了解的具体模块。";
+        }
+        String context = safeText(data.get("answerContext"), "");
+        if (context.isBlank()) {
+            return "知识库命中了相关内容，但暂时无法生成可展示的说明。";
+        }
+        return "根据平台知识库：\n" + context;
+    }
+
     private String safeText(Object value, String fallback) {
         if (value == null) {
             return fallback;
         }
         String text = String.valueOf(value).trim();
         return text.isBlank() ? fallback : text;
-    }
-
-    /**
-     * 提取并展示路线安全分析结果
-     */
-    @SuppressWarnings("unchecked")
-    private void appendSafetyAnalysis(StringBuilder context, ToolResult result) {
-        if (result.getData() == null) {
-            return;
-        }
-
-        Object safetyObj = result.getData() instanceof Map ?
-                ((Map<String, Object>) result.getData()).get("safetyAnalysis") : null;
-
-        if (safetyObj instanceof Map<?, ?> safety) {
-            context.append("\n路线安全分析结果：\n");
-
-            Object score = safety.get("safetyScore");
-            if (score != null) {
-                context.append("- 安全评分：").append(score).append("/10\n");
-            }
-
-            Object warnings = safety.get("warnings");
-            if (warnings instanceof List<?> warningList && !warningList.isEmpty()) {
-                context.append("- 警告：\n");
-                for (Object w : warningList) {
-                    context.append("  · ").append(w).append("\n");
-                }
-            }
-
-            Object suggestions = safety.get("suggestions");
-            if (suggestions instanceof List<?> suggestionList && !suggestionList.isEmpty()) {
-                context.append("- 建议：\n");
-                for (Object s : suggestionList) {
-                    context.append("  · ").append(s).append("\n");
-                }
-            }
-
-            if (Boolean.TRUE.equals(safety.get("hasAlternative"))) {
-                Object alternative = safety.get("alternativeSummary");
-                if (alternative != null) {
-                    context.append("- 替代路线：").append(alternative).append("\n");
-                }
-            }
-
-            context.append("\n请根据以上安全分析信息，友好地提醒用户注意安全。\n");
-        }
     }
 
     /**

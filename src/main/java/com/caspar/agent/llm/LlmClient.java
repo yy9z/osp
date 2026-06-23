@@ -10,7 +10,10 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.model.tool.ToolCallingChatOptions;
+import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -116,6 +119,59 @@ public class LlmClient {
         }
     }
 
+    /**
+     * Ask the model to select tools without allowing Spring AI to execute them.
+     */
+    public ChatResponse chatForToolCalls(List<LlmMessage> messages, List<ToolCallback> toolCallbacks) {
+        long startTime = System.currentTimeMillis();
+        try {
+            if (messages == null || messages.isEmpty()) {
+                throw new LlmCallException("LLM Tool Calling失败: 消息列表不能为空");
+            }
+            if (toolCallbacks == null || toolCallbacks.isEmpty()) {
+                throw new LlmCallException("LLM Tool Calling失败: 工具列表不能为空");
+            }
+
+            ToolCallingChatOptions options = ToolCallingChatOptions.builder()
+                    .toolCallbacks(toolCallbacks)
+                    .internalToolExecutionEnabled(false)
+                    .build();
+            Prompt prompt = new Prompt(toSpringMessages(messages), options);
+            int attempts = Math.max(1, maxAttempts);
+            LlmCallException lastError = null;
+
+            for (int attempt = 1; attempt <= attempts; attempt++) {
+                try {
+                    ChatResponse response = callResponseWithTimeout(prompt);
+                    if (response == null || response.getResult() == null) {
+                        throw new LlmCallException("LLM Tool Calling失败: 模型返回空响应");
+                    }
+                    log.info("LLM Tool Calling完成: provider=siliconflow, model={}, 工具数={}, 尝试次数={}, 耗时={}ms",
+                            model, toolCallbacks.size(), attempt, System.currentTimeMillis() - startTime);
+                    return response;
+                } catch (LlmCallException e) {
+                    lastError = e;
+                    boolean canRetry = attempt < attempts && isRetryable(e);
+                    if (!canRetry) {
+                        throw e;
+                    }
+                    log.warn("LLM Tool Calling第 {}/{} 次失败，准备重试: model={}, error={}",
+                            attempt, attempts, model, e.getMessage());
+                    sleepBeforeRetry();
+                }
+            }
+            throw lastError != null ? lastError : new LlmCallException("LLM Tool Calling失败: 未知错误");
+        } catch (LlmCallException e) {
+            log.error("LLM Tool Calling失败, model={}, 耗时={}ms, 错误={}",
+                    model, System.currentTimeMillis() - startTime, e.getMessage());
+            throw e;
+        } catch (Exception e) {
+            log.error("LLM Tool Calling异常, model={}, 耗时={}ms",
+                    model, System.currentTimeMillis() - startTime, e);
+            throw new LlmCallException("LLM Tool Calling异常: " + e.getMessage(), e);
+        }
+    }
+
     private String callWithTimeout(Prompt prompt) {
         CompletableFuture<String> future = CompletableFuture.supplyAsync(
                 () -> chatClient.prompt(prompt).call().content(),
@@ -132,6 +188,25 @@ public class LlmClient {
         } catch (ExecutionException e) {
             Throwable cause = e.getCause() != null ? e.getCause() : e;
             throw new LlmCallException("LLM 调用异常: " + cause.getMessage(), cause);
+        }
+    }
+
+    private ChatResponse callResponseWithTimeout(Prompt prompt) {
+        CompletableFuture<ChatResponse> future = CompletableFuture.supplyAsync(
+                () -> chatClient.prompt(prompt).call().chatResponse(),
+                llmExecutor
+        );
+        try {
+            return future.get(Math.max(timeoutMs, 1000L), TimeUnit.MILLISECONDS);
+        } catch (TimeoutException e) {
+            future.cancel(true);
+            throw new LlmCallException("LLM Tool Calling超时(" + timeoutMs + "ms)", e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new LlmCallException("LLM Tool Calling被中断", e);
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            throw new LlmCallException("LLM Tool Calling异常: " + cause.getMessage(), cause);
         }
     }
 
