@@ -57,7 +57,7 @@ npm --version
 完整数据库快照位于：
 
 ```text
-docs/sql/campus_platform_20260611.sql
+docs/sql/campus_platform_20260623.sql
 ```
 
 该文件包含建库语句、22 张表的结构和演示数据。
@@ -65,7 +65,7 @@ docs/sql/campus_platform_20260611.sql
 ### macOS/Linux
 
 ```bash
-mysql -u root -p < docs/sql/campus_platform_20260611.sql
+mysql -u root -p < docs/sql/campus_platform_20260623.sql
 ```
 
 ### Windows
@@ -73,13 +73,13 @@ mysql -u root -p < docs/sql/campus_platform_20260611.sql
 在项目根目录通过 CMD 执行：
 
 ```bat
-mysql -u root -p < docs\sql\campus_platform_20260611.sql
+mysql -u root -p < docs\sql\campus_platform_20260623.sql
 ```
 
 如果当前使用 PowerShell，可以调用 CMD：
 
 ```powershell
-cmd /c "mysql -u root -p < docs\sql\campus_platform_20260611.sql"
+cmd /c "mysql -u root -p < docs\sql\campus_platform_20260623.sql"
 ```
 
 根据提示输入本机 MySQL 密码。导入后检查数据库：
