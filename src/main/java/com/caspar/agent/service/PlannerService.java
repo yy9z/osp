@@ -7,7 +7,7 @@ import java.util.Map;
 
 /**
  * 兼容兜底规划服务：根据意图和槽位，决定需要调用哪些本地函数以及调用顺序。
- * 主链路由 FunctionCallingPlannerService 一次性生成 tool_calls。
+ * 当前 Agent 主链路已经迁移到 Spring AI Alibaba ReactAgent，本类仅保留给旧逻辑兼容。
  */
 @Service
 public class PlannerService {

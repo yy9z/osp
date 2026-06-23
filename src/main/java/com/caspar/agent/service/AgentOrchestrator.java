@@ -4,8 +4,7 @@ import com.caspar.agent.model.AgentCard;
 import com.caspar.agent.model.AgentRequest;
 import com.caspar.agent.model.AgentResponse;
 import com.caspar.agent.model.AgentSession;
-import com.caspar.agent.model.FunctionCallPlan;
-import com.caspar.agent.model.SlotResult;
+import com.caspar.agent.model.CampusAgentRunResult;
 import com.caspar.agent.model.ToolResult;
 import com.caspar.agent.session.AgentSessionManager;
 import lombok.RequiredArgsConstructor;
@@ -14,11 +13,13 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
- * Agent 核心编排服务：协调 Function Calling 规划、本地函数调用、回复生成。
+ * Agent 核心编排服务：协调 ReactAgent、本地工具回调、前端卡片和会话记录。
  * 从 AgentController 中抽离，使 Controller 只负责 HTTP 层职责。
  */
 @Slf4j
@@ -29,8 +30,9 @@ public class AgentOrchestrator {
     private static final int MAX_ASK_TURNS = 3;
 
     private final IntentService intentService;
-    private final FunctionCallingPlannerService functionCallingPlannerService;
-    private final ToolExecutorService toolExecutorService;
+    private final CampusReactAgentService campusReactAgentService;
+    private final AgentToolExecutionRecorder toolExecutionRecorder;
+    private final AgentToolCardService agentToolCardService;
     private final ResponseGeneratorService responseGeneratorService;
     private final AgentSessionManager sessionManager;
     private final AgentHistoryService agentHistoryService;
@@ -59,6 +61,7 @@ public class AgentOrchestrator {
         int currentTurn = session.getTurnCount();
         branchService.mergeRequestContext(session, request.getContext());
 
+        String traceId = null;
         try {
             String existingIntent = session.getIntent();
             boolean likelyBusiness = intentService.isPossiblyBusinessScenario(userInput);
@@ -67,29 +70,25 @@ public class AgentOrchestrator {
                 return branchService.handleGeneralChat(session, userId, sessionId, userInput, currentTurn, startTime);
             }
 
-            FunctionCallPlan functionCallPlan = functionCallingPlannerService.plan(userInput, session);
-            String intent = functionCallPlan.getIntent();
+            traceId = UUID.randomUUID().toString();
+            toolExecutionRecorder.begin(traceId);
+            CampusAgentRunResult runResult = campusReactAgentService.run(userInput, session, userId, traceId);
+            List<AgentToolExecutionRecord> toolRecords = toolExecutionRecorder.snapshot(traceId);
+            toolExecutionRecorder.clear(traceId);
+
+            List<String> toolNames = toolRecords.stream().map(AgentToolExecutionRecord::toolName).toList();
+            List<ToolResult> toolResults = toolRecords.stream().map(AgentToolExecutionRecord::result).toList();
+            String intent = resolveIntent(toolNames, existingIntent, likelyBusiness);
+            Map<String, Object> extractedSlots = mergeExtractedSlots(session.getSlots(), toolRecords);
+
             session.setIntent(intent);
+            session.setSlots(extractedSlots);
+            session.setPendingSlots(Collections.emptyList());
 
-            if ("UNKNOWN".equals(intent)) {
-                return branchService.handleUnknownIntent(session, userId, sessionId, userInput, currentTurn, likelyBusiness, startTime);
-            }
-
-            SlotResult slotResult = toSlotResult(functionCallPlan);
-            session.setSlots(slotResult.getSlots());
-            session.setPendingSlots(slotResult.getMissingSlots());
-
-            if (!slotResult.getMissingSlots().isEmpty() && session.getTurnCount() <= MAX_ASK_TURNS) {
-                return branchService.handleSlotAsk(session, userId, sessionId, userInput, intent, slotResult, currentTurn, startTime);
-            }
-
-            List<String> toolNames = functionCallPlan.getToolNames();
-            List<ToolResult> toolResults = toolExecutorService.execute(toolNames, slotResult.getSlots(), userId);
-
-            AgentResponse followUpResponse = branchService.buildToolFollowUpResponse(session, sessionId, intent, toolNames, toolResults, slotResult.getSlots());
+            AgentResponse followUpResponse = branchService.buildToolFollowUpResponse(session, sessionId, intent, toolNames, toolResults, extractedSlots);
             if (followUpResponse != null) {
                 sessionManager.save(session);
-                turnRecorderService.recordTurnSafely(session, userId, currentTurn, userInput, intent, slotResult.getSlots(), toolNames,
+                turnRecorderService.recordTurnSafely(session, userId, currentTurn, userInput, intent, extractedSlots, toolNames,
                         Map.of(
                                 "followUpType", followUpResponse.getFollowUpType(),
                                 "followUpOptions", followUpResponse.getFollowUpOptions() == null ? Collections.emptyList() : followUpResponse.getFollowUpOptions()
@@ -99,34 +98,49 @@ public class AgentOrchestrator {
                 return followUpResponse;
             }
 
-            String reply = responseGeneratorService.generate(userInput, toolResults);
-            List<AgentCard> cards = toolExecutorService.toCards(toolNames, toolResults);
+            if (toolResults.isEmpty() && "UNKNOWN".equals(intent)) {
+                return branchService.handleUnknownIntent(session, userId, sessionId, userInput, currentTurn, likelyBusiness, startTime);
+            }
+
+            String reply = resolveReply(runResult.reply(), userInput, toolResults);
+            List<AgentCard> cards = agentToolCardService.toCards(toolRecords);
+            boolean taskCompleted = !toolResults.isEmpty() && toolResults.stream().allMatch(ToolResult::isSuccess);
+            if (toolResults.isEmpty() && currentTurn >= MAX_ASK_TURNS) {
+                taskCompleted = false;
+                session.setTurnCount(0);
+            }
 
             session.addHistory("assistant", reply);
-            session.setIntent(null);
-            session.setSlots(Collections.emptyMap());
-            session.setPendingSlots(Collections.emptyList());
-            session.setTurnCount(0);
+            if (taskCompleted) {
+                session.setIntent(null);
+                session.setSlots(Collections.emptyMap());
+                session.setPendingSlots(Collections.emptyList());
+                session.setTurnCount(0);
+            }
             sessionManager.save(session);
 
-            List<String> followUpSuggestions = branchService.buildFollowUpSuggestions(intent, slotResult.getSlots());
-            turnRecorderService.recordTurnSafely(session, userId, currentTurn, userInput, intent, slotResult.getSlots(), toolNames,
+            List<String> followUpSuggestions = taskCompleted
+                    ? branchService.buildFollowUpSuggestions(intent, extractedSlots)
+                    : Collections.emptyList();
+            turnRecorderService.recordTurnSafely(session, userId, currentTurn, userInput, intent, extractedSlots, toolNames,
                     Map.of("cards", cards, "followUpSuggestions", followUpSuggestions),
                     reply, true, null, elapsedMs(startTime));
 
-            log.info("Agent请求完成(成功), intent={}, 总耗时={}ms", intent, System.currentTimeMillis() - startTime);
+            log.info("Agent请求完成(ReactAgent), intent={}, tools={}, completed={}, 总耗时={}ms",
+                    intent, toolNames, taskCompleted, System.currentTimeMillis() - startTime);
             return AgentResponse.builder()
                     .sessionId(sessionId)
                     .reply(reply)
                     .intent(intent)
-                    .extractedSlots(slotResult.getSlots())
+                    .extractedSlots(extractedSlots)
                     .cards(cards)
                     .usedTools(toolNames)
-                    .taskCompleted(true)
+                    .taskCompleted(taskCompleted)
                     .followUpSuggestions(followUpSuggestions)
                     .build();
 
         } catch (Exception e) {
+            toolExecutionRecorder.clear(traceId);
             log.error("Agent处理异常: sessionId={}", sessionId, e);
             String errorReply = "抱歉，处理过程中出现了问题，请稍后再试。";
             session.addHistory("assistant", errorReply);
@@ -150,11 +164,51 @@ public class AgentOrchestrator {
         return (int) (System.currentTimeMillis() - startTime);
     }
 
-    private SlotResult toSlotResult(FunctionCallPlan functionCallPlan) {
-        SlotResult slotResult = new SlotResult();
-        slotResult.setSlots(functionCallPlan.getSlots() == null ? Collections.emptyMap() : functionCallPlan.getSlots());
-        slotResult.setMissingSlots(functionCallPlan.getMissingSlots() == null ? Collections.emptyList() : functionCallPlan.getMissingSlots());
-        slotResult.setAskQuestion(functionCallPlan.getAskQuestion());
-        return slotResult;
+    private String resolveReply(String agentReply, String userInput, List<ToolResult> toolResults) {
+        if (agentReply != null && !agentReply.isBlank()) {
+            return agentReply;
+        }
+        if (toolResults != null && !toolResults.isEmpty()) {
+            return responseGeneratorService.generate(userInput, toolResults);
+        }
+        return "我还需要更多信息才能办理这个校园事务，请补充一下具体需求。";
+    }
+
+    private Map<String, Object> mergeExtractedSlots(Map<String, Object> currentSlots, List<AgentToolExecutionRecord> records) {
+        Map<String, Object> merged = new LinkedHashMap<>();
+        if (currentSlots != null) {
+            merged.putAll(currentSlots);
+        }
+        if (records != null) {
+            for (AgentToolExecutionRecord record : records) {
+                if (record.params() != null) {
+                    merged.putAll(record.params());
+                }
+            }
+        }
+        return merged;
+    }
+
+    private String resolveIntent(List<String> toolNames, String existingIntent, boolean likelyBusiness) {
+        if (toolNames == null || toolNames.isEmpty()) {
+            if (existingIntent != null && !existingIntent.isBlank()) {
+                return existingIntent;
+            }
+            return likelyBusiness ? "UNKNOWN" : "GENERAL_CHAT";
+        }
+        return switch (toolNames.get(0)) {
+            case "dorm_repair" -> "DORM_REPAIR";
+            case "dorm_query" -> "DORM_QUERY";
+            case "repair_query" -> "REPAIR_QUERY";
+            case "secondhand_search" -> "SECONDHAND_SEARCH";
+            case "secondhand_publish" -> "SECONDHAND_PUBLISH";
+            case "lostfound_lost" -> "LOSTFOUND_LOST";
+            case "lostfound_found" -> "LOSTFOUND_FOUND";
+            case "navigation_v2", "navigation" -> "NAVIGATION";
+            case "message_query" -> "MESSAGE_QUERY";
+            case "campus_tips" -> "CAMPUS_TIPS";
+            case "campus_knowledge_query" -> "CAMPUS_KNOWLEDGE";
+            default -> "UNKNOWN";
+        };
     }
 }

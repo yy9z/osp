@@ -144,6 +144,9 @@ public class SecurityConfig {
                         auth.requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**", "/webjars/**").permitAll();
                     }
 
+                    // 系统内 MCP 桥接接口：不走用户 JWT，由控制器校验 loopback + 内部共享密钥
+                    auth.requestMatchers("/api/internal/mcp/**").permitAll();
+
                     // --- Agent 接口：需要已登录（ROLE_USER 及以上）---
                     auth.requestMatchers("/api/agent/**").authenticated();
 

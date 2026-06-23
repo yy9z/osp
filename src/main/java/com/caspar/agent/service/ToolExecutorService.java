@@ -21,8 +21,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Function Calling 执行服务：按规划器选择的本地函数调用 AgentTool，收集结果。
- * MCP 仅作为显式启用后的可选远程工具通道。
+ * Legacy 工具执行服务：按旧规划器选择的本地函数调用 AgentTool，收集结果。
+ * <p>
+ * 当前 Agent 主链路通过 Spring AI Alibaba ToolCallback 执行本地工具，本类保留给
+ * 监控接口和旧链路兼容使用。
  */
 @Slf4j
 @Service

@@ -43,6 +43,11 @@ public class McpProperties {
     private Map<String, String> env = new HashMap<>();
 
     /**
+     * 系统内 MCP server 调用内部桥接接口时使用的共享密钥。
+     */
+    private String internalSecret;
+
+    /**
      * 启动握手超时时间（毫秒）。
      */
     private long startupTimeoutMs = 15000;

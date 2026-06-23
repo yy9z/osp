@@ -139,11 +139,15 @@ public class AgentBranchService {
                     ? list.stream().map(String::valueOf).toList()
                     : Collections.emptyList();
             String followUpType = String.valueOf(data.containsKey("clarificationType") ? data.get("clarificationType") : "clarification");
+            Object askForValue = data.containsKey("askFor")
+                    ? data.get("askFor")
+                    : (data.containsKey("missingSlot") ? data.get("missingSlot") : "campus");
+            String askFor = String.valueOf(askForValue);
             session.addHistory("assistant", reply);
             return AgentResponse.builder()
                     .sessionId(sessionId)
                     .reply(reply)
-                    .askFor("campus")
+                    .askFor(askFor)
                     .intent(intent)
                     .extractedSlots(extractedSlots)
                     .cards(Collections.emptyList())

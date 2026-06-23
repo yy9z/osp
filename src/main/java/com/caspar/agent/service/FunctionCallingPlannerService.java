@@ -21,7 +21,10 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Function Calling 规划服务：一次性完成意图识别、参数抽取和本地函数选择。
+ * Legacy Function Calling 规划服务。
+ * <p>
+ * 当前 Agent 主链路已经迁移到 Spring AI Alibaba ReactAgent，本类仅保留给旧测试、
+ * 回归对比和必要的兼容兜底使用，不再作为 /api/agent/chat 的主规划入口。
  */
 @Slf4j
 @Service

@@ -177,6 +177,14 @@ public class IntentService {
             return true;
         }
 
+        if (TextMatchUtils.containsAnyIgnoreCase(lower,
+                "平台怎么用", "怎么使用", "如何使用", "怎么操作", "操作流程", "使用说明", "帮助",
+                "规则", "注意事项", "常见问题", "faq", "流程", "怎么办")
+                && TextMatchUtils.containsAnyIgnoreCase(lower,
+                "平台", "助手", "报修", "二手", "失物", "招领", "寻物", "消息", "通知", "导航", "面交", "校园卡")) {
+            return true;
+        }
+
         return isLikelySecondhandScenario(lower) || isLikelyMessageScenario(lower);
     }
 

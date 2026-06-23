@@ -25,7 +25,7 @@ import java.util.concurrent.TimeoutException;
 
 /**
  * 大模型调用封装。
- * 底层使用 Spring AI + OpenAI (适配 SiliconFlow) 自动配置，业务层继续通过 chat(messages) 调用。
+ * 底层使用 Spring AI Alibaba + DashScope 自动配置，业务层继续通过 chat(messages) 调用。
  */
 @Slf4j
 @Service
@@ -36,7 +36,7 @@ public class LlmClient {
     private ChatClient chatClient;
     private ExecutorService llmExecutor;
 
-    @Value("${spring.ai.openai.chat.options.model:unknown}")
+    @Value("${spring.ai.dashscope.chat.options.model:unknown}")
     private String model;
 
     @Value("${agent.llm.timeout-ms:30000}")
@@ -90,7 +90,7 @@ public class LlmClient {
                         throw new LlmCallException("LLM 调用失败: 模型返回空内容");
                     }
                     long totalTime = System.currentTimeMillis() - startTime;
-                    log.info("LLM 调用完成: provider=siliconflow, model={}, 消息数={}, 尝试次数={}, 耗时={}ms",
+                    log.info("LLM 调用完成: provider=dashscope, model={}, 消息数={}, 尝试次数={}, 耗时={}ms",
                             model, messages.size(), attempt, totalTime);
                     return result;
                 } catch (LlmCallException e) {

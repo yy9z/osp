@@ -1,65 +1,77 @@
-# Agent MCP 可选扩展接入说明
+# Agent MCP 系统内场景接入说明
 
-本项目当前主链路已经改为单 Agent + Function Calling / 本地 `AgentTool` 调用，详见 `docs/AGENT_FUNCTION_CALLING.md`。
+本项目默认主链路仍然是 Spring AI Alibaba ReactAgent + 本地 `ToolCallback` + 10 个 `AgentTool`。
 
-MCP 不再作为默认运行依赖，仅作为后续跨进程、跨语言或第三方系统工具接入的可选扩展。需要启用时，才在 `ToolExecutorService` 中优先通过 MCP 调用工具（stdio），失败后可回退本地工具。
+MCP 作为可选扩展通道，用于把系统内跨模块流程封装成协议化工具。默认关闭；启用 `mcp-demo` profile 后，ReactAgent 会额外获得 4 个 `mcp_*` 场景工具。
 
-## 1. 配置项
+## 1. MCP 场景工具
 
-在 `src/main/resources/application.properties` 中配置：
+- `mcp_campus_overview`：首页提醒 + 消息通知 + 报修状态汇总
+- `mcp_dorm_repair_flow`：宿舍档案检查 + 宿舍报修提交
+- `mcp_secondhand_meetup_flow`：二手商品搜索 + 校内面交点 + 导航联动
+- `mcp_lostfound_match_flow`：寻物/招领发布 + 匹配候选返回
+
+这些工具不新增外部系统，也不保存业务数据。MCP server 只负责编排流程，真实业务仍由后端已有 `AgentTool` 和 Java 业务组件执行。
+
+## 2. 启用方式
+
+默认配置：
 
 ```properties
 agent.mcp.enabled=false
 agent.mcp.fallback-to-local=true
-# agent.mcp.command=npx
-# agent.mcp.args=-y,@modelcontextprotocol/server-filesystem,/Users/yy/code/OSP
-agent.mcp.startup-timeout-ms=15000
-agent.mcp.call-timeout-ms=30000
-agent.mcp.circuit-breaker-failure-threshold=3
-agent.mcp.circuit-breaker-open-ms=60000
-agent.mcp.pending-warning-threshold=5
+agent.mcp.internal-secret=${AGENT_MCP_INTERNAL_SECRET:}
 ```
 
-- `enabled=false`：默认关闭，项目日常运行走 Function Calling / 本地 `AgentTool`
-- `fallback-to-local=true`：MCP 失败时回退本地工具（推荐）
-- `command/args`：启动 MCP stdio server 的命令
-- `circuit-breaker-*`：MCP 连续失败熔断配置，避免每次请求都等待超时
-- `pending-warning-threshold`：pending 请求数告警阈值（用于定位潜在响应关联异常）
-
-## 2. 需要提供的 MCP 工具名
-
-`PlannerService` 当前会规划以下工具名，请你的 MCP server 至少实现这些 `tools/call name`：
-
-- `dorm_repair`
-- `dorm_query`
-- `repair_query`
-- `secondhand_search`
-- `secondhand_publish`
-- `lostfound_lost`
-- `lostfound_found`
-- `navigation_v2`
-- `message_query`
-- `campus_tips`
-
-如果你的 MCP 工具名不同，可用映射：
+演示配置位于 `src/main/resources/application-mcp-demo.properties`：
 
 ```properties
-agent.mcp.tool-name-mapping.navigation_v2=navigation
+agent.mcp.enabled=true
+agent.mcp.command=node
+agent.mcp.args=scripts/mcp/campus-internal-mcp-server.mjs
+agent.mcp.internal-secret=${AGENT_MCP_INTERNAL_SECRET:dev-mcp-secret}
+agent.mcp.env.CAMPUS_MCP_BASE_URL=http://127.0.0.1:${server.port:8080}
+agent.mcp.env.CAMPUS_MCP_INTERNAL_SECRET=${AGENT_MCP_INTERNAL_SECRET:dev-mcp-secret}
 ```
 
-## 3. 参数约定
+启动示例：
 
-每次 MCP `tools/call` 的 `arguments` 会包含：
+```bash
+mvn spring-boot:run -Dspring-boot.run.profiles=mcp-demo
+```
 
-- 槽位参数（来自 `SlotFillingService`）
-- `userId`（当前登录用户）
-- `user_id`（兼容字段）
+## 3. 安全边界
 
-你的 MCP server 可以按需读取这些参数并完成业务调用。
+MCP server 通过内部桥接接口调用已有工具：
 
-## 4. 监控与运维接口（管理员）
+```text
+MCP tools/call
+→ scripts/mcp/campus-internal-mcp-server.mjs
+→ POST /api/internal/mcp/tools/call
+→ ToolRegistry
+→ AgentTool
+→ Java 业务组件
+```
 
-- `GET /api/agent/mcp/health`：查看 MCP 健康状态与指标快照
-- `GET /api/agent/mcp/metrics`：查看 MCP 详细指标
-- `POST /api/agent/mcp/reset-metrics`：重置 MCP 统计指标
-- `POST /api/agent/mcp/reset-circuit`：手动关闭熔断状态
+内部桥接接口有三层限制：
+
+- 只接受本机 loopback 请求。
+- 必须携带 `X-Campus-MCP-Secret`。
+- 只允许调用宿舍、二手、失物、导航、消息和提醒相关白名单工具。
+
+模型传入的 `userId`、`token`、`authorization` 等身份字段会被过滤，真实用户身份由 ReactAgent 工具上下文传递到 MCP 调用。
+
+## 4. 运维接口
+
+管理员可查看 MCP 运行状态：
+
+- `GET /api/agent/mcp/health`
+- `GET /api/agent/mcp/metrics`
+- `POST /api/agent/mcp/reset-metrics`
+- `POST /api/agent/mcp/reset-circuit`
+
+## 5. 答辩口径
+
+推荐表述：
+
+> 当前核心业务通过本地工具稳定执行；MCP 用于把系统内跨模块场景封装成协议化工具，例如待办总览、报修流程、二手面交导航和失物匹配。它不是新增外部功能，而是为已有校园业务提供跨进程、可观测、可熔断的扩展调用通道。
