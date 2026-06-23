@@ -49,7 +49,7 @@ export SPRING_DATASOURCE_URL=jdbc:mysql://localhost:3306/campus_platform?useUnic
 export SPRING_DATASOURCE_USERNAME=root
 export SPRING_DATASOURCE_PASSWORD=your_password
 export JWT_SECRET=your_jwt_secret
-export SPRING_AI_OPENAI_API_KEY=your_llm_key
+export AI_DASHSCOPE_API_KEY=your_dashscope_key
 export AMAP_WEB_KEY=your_amap_key
 export AGENT_GRAPH_REDIS_CHECKPOINT_ENABLED=true
 ```

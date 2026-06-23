@@ -1,23 +1,38 @@
 # 项目克隆与本地运行指南
 
-本文档用于帮助首次接触本项目的开发者，从 Gitee/Git 仓库克隆代码后，在本地完成数据库恢复、环境配置以及前后端启动。
+本文档面向第一次运行本项目的开发者。完成以下步骤后，可以在本地启动 Spring Boot 后端和 Vue 前端。
 
-## 1. 环境要求
+## 1. 项目地址与目录
 
-建议安装以下环境：
+GitHub 仓库：
 
-| 软件 | 建议版本 | 用途 |
+```text
+https://github.com/yy9z/osp
+```
+
+克隆并进入项目：
+
+```bash
+git clone https://github.com/yy9z/osp.git
+cd osp
+```
+
+后续命令如无特别说明，均在项目根目录执行。
+
+## 2. 环境要求
+
+| 软件 | 版本要求 | 用途 |
 | --- | --- | --- |
-| Git | 2.x 或更高 | 克隆项目 |
+| Git | 2.x 或更高 | 克隆和更新代码 |
 | Java | JDK 21 | 运行 Spring Boot 后端 |
-| MySQL | 8.0 或更高 | 业务数据库 |
-| Node.js | 22 LTS | 运行 Vue 前端 |
-| npm | 10 或更高 | 安装前端依赖 |
-| Redis | 6/7，可选 | 保存 Agent 会话 |
+| MySQL | 8.0 或更高 | 保存业务数据 |
+| Node.js | 20.19+ 或 22.12+ | 运行 Vite 前端 |
+| npm | 随 Node.js 安装 | 安装前端依赖 |
+| Redis | 6/7，推荐 | 缓存和保存 Agent 会话 |
 
-项目已提供 Maven Wrapper，不需要单独安装 Maven。
+项目包含 Maven Wrapper，不需要另外安装 Maven。
 
-检查环境：
+检查本机环境：
 
 ```bash
 git --version
@@ -27,62 +42,67 @@ node --version
 npm --version
 ```
 
-Java 版本必须是 21。Redis 没有启动时，Agent 会话会自动降级到进程内存，不影响后端基本启动。
+请确认 `java -version` 显示 Java 21。Node.js 推荐直接使用 22 LTS。
 
-## 2. 克隆项目
+## 3. 初始化 MySQL 数据库
 
-将下面的仓库地址替换成实际 Gitee 地址：
+项目默认连接：
 
-```bash
-git clone https://gitee.com/你的用户名/你的仓库名.git
-cd 你的仓库名
+```text
+数据库：campus_platform
+地址：localhost:3306
+用户名：root
 ```
 
-后续命令默认都在项目根目录执行。
-
-## 3. 创建并导入数据库
-
-项目使用的数据库名称是 `campus_platform`。仓库提供的完整数据库快照为：
+完整数据库快照位于：
 
 ```text
 docs/sql/campus_platform_20260611.sql
 ```
 
-该 SQL 文件已经包含 `CREATE DATABASE`、表结构和初始化数据，因此可直接导入：
+该文件包含建库语句、22 张表的结构和演示数据。
+
+### macOS/Linux
 
 ```bash
 mysql -u root -p < docs/sql/campus_platform_20260611.sql
 ```
 
-执行后输入自己电脑上的 MySQL `root` 密码。
+### Windows
 
-检查导入结果：
+在项目根目录通过 CMD 执行：
+
+```bat
+mysql -u root -p < docs\sql\campus_platform_20260611.sql
+```
+
+如果当前使用 PowerShell，可以调用 CMD：
+
+```powershell
+cmd /c "mysql -u root -p < docs\sql\campus_platform_20260611.sql"
+```
+
+根据提示输入本机 MySQL 密码。导入后检查数据库：
 
 ```bash
 mysql -u root -p -e "USE campus_platform; SHOW TABLES;"
 ```
 
-正常情况下应看到 22 张表。
+如果需要重新导入，请先备份已有数据，再删除旧数据库。不要对包含重要数据的数据库直接执行删除。
 
-如果数据库已经存在，并且希望完全重新导入，可以先手动备份，再执行：
+## 4. 配置后端
 
-```sql
-DROP DATABASE campus_platform;
-```
-
-然后重新运行导入命令。不要在保存有重要数据的数据库上直接执行删除操作。
-
-## 4. 配置后端环境变量
-
-后端配置文件位于：
+后端配置文件是：
 
 ```text
 src/main/resources/application.properties
 ```
 
-不要把数据库密码、JWT 密钥和第三方 API Key 直接写进该文件并提交到仓库。启动前在终端设置环境变量。
+配置文件已经通过环境变量读取密码和第三方密钥，不要把真实凭据直接写入并提交到 Git。
 
-### macOS/Linux
+### 4.1 必需变量
+
+数据库密码和 JWT 密钥是本地启动所必需的。
 
 先生成一个 JWT 密钥：
 
@@ -90,50 +110,106 @@ src/main/resources/application.properties
 openssl rand -base64 32
 ```
 
-复制输出值，然后设置环境变量：
+保存输出结果。同一开发环境应保持这个值不变，否则后端重启后，之前签发的登录 Token 会失效。
+
+macOS/Linux：
 
 ```bash
-export SPRING_DATASOURCE_USERNAME=root
-export SPRING_DATASOURCE_PASSWORD=你的MySQL密码
-export JWT_SECRET=上一步生成的Base64字符串
+export SPRING_DATASOURCE_USERNAME='root'
+export SPRING_DATASOURCE_PASSWORD='你的MySQL密码'
+export JWT_SECRET='刚才生成的Base64字符串'
 ```
 
-`JWT_SECRET` 是启动必填项，必须是 Base64 编码且解码后不少于 32 字节。同一套开发环境应固定使用同一个值，否则后端重启后原有登录 Token 会失效。
+如果数据库不在默认地址，可额外设置：
 
-### Windows PowerShell
+```bash
+export SPRING_DATASOURCE_URL='jdbc:mysql://localhost:3306/campus_platform?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true'
+```
 
-先准备一个符合要求的 Base64 JWT 密钥，然后执行：
+Windows PowerShell：
 
 ```powershell
 $env:SPRING_DATASOURCE_USERNAME="root"
 $env:SPRING_DATASOURCE_PASSWORD="你的MySQL密码"
-$env:JWT_SECRET="你的Base64密钥"
+$env:JWT_SECRET="生成的Base64字符串"
 ```
 
-这些环境变量只对当前终端窗口生效。使用 IntelliJ IDEA 启动时，也可以在 Run Configuration 的 Environment variables 中填写。
+环境变量只在当前终端窗口中有效。使用 IntelliJ IDEA 时，也可以把它们填写到 Run Configuration 的 Environment variables 中。
 
-### 可选功能配置
+### 4.2 智能 Agent（可选）
 
-使用智能 Agent、校园地图或阿里云 OSS 时，再设置对应变量：
+项目当前通过 Spring AI Alibaba 调用 DashScope。启用智能 Agent 时设置：
 
 ```bash
-# 智能 Agent，项目默认兼容硅基流动 OpenAI 协议
-export SPRING_AI_OPENAI_API_KEY=你的模型APIKey
-export SPRING_AI_OPENAI_BASE_URL=https://api.siliconflow.cn
-export LLM_MODEL=Qwen/Qwen2.5-72B-Instruct
-
-# 后端高德地图 Web 服务
-export AMAP_WEB_KEY=你的高德Web服务Key
-export AMAP_WEB_SECURITY_CODE=你的高德安全密钥
-
-# 阿里云 OSS
-export ALIYUN_OSS_ACCESS_KEY_ID=你的AccessKeyId
-export ALIYUN_OSS_ACCESS_KEY_SECRET=你的AccessKeySecret
+export AI_DASHSCOPE_API_KEY='你的DashScope API Key'
+export LLM_MODEL='qwen-plus'
 ```
 
-不配置模型 API Key 时，普通业务功能仍可运行，但智能 Agent 无法正常调用大模型。不配置 OSS 时，文件上传会尝试降级到本地目录。
+Windows PowerShell：
 
-## 5. 启动后端
+```powershell
+$env:AI_DASHSCOPE_API_KEY="你的DashScope API Key"
+$env:LLM_MODEL="qwen-plus"
+```
+
+不配置 API Key 时，登录、二手交易、失物招领等普通业务仍可使用，但依赖大模型的 Agent 对话会失败或降级。
+
+### 4.3 高德地图（可选）
+
+后端地点搜索和路线规划需要高德 Web 服务 Key：
+
+```bash
+export AMAP_WEB_KEY='你的高德Web服务Key'
+export AMAP_WEB_SECURITY_CODE='你的高德安全密钥'
+```
+
+前端地图 Key 在第 7 节单独配置。
+
+### 4.4 阿里云 OSS（可选）
+
+```bash
+export ALIYUN_OSS_ACCESS_KEY_ID='你的AccessKeyId'
+export ALIYUN_OSS_ACCESS_KEY_SECRET='你的AccessKeySecret'
+```
+
+未配置 OSS 时，单文件上传接口会尝试降级到本地 `campus-frontend/public/images/uploads/`。
+
+## 5. 启动 Redis
+
+Redis 用于业务缓存、Agent 会话和 Graph 检查点。为了获得完整功能，建议在启动后端前先启动 Redis。
+
+使用 Docker：
+
+```bash
+docker run -d --name osp-redis -p 6379:6379 redis:7-alpine
+```
+
+容器已经创建时：
+
+```bash
+docker start osp-redis
+```
+
+检查连接：
+
+```bash
+redis-cli ping
+```
+
+正常结果为 `PONG`。默认连接地址是 `localhost:6379`，数据库编号为 `0`。
+
+如果暂时不安装 Redis，可以在启动后端前关闭 Redis 缓存和 Graph Redis 检查点：
+
+```bash
+export SPRING_CACHE_TYPE='none'
+export AGENT_GRAPH_REDIS_CHECKPOINT_ENABLED='false'
+```
+
+此时 Agent 会话使用进程内存降级存储，后端重启后会话会丢失，日志中也可能出现 Redis 降级提示。
+
+## 6. 启动后端
+
+确保 MySQL 已启动，并且在设置环境变量的同一个终端中执行：
 
 macOS/Linux：
 
@@ -141,13 +217,13 @@ macOS/Linux：
 ./mvnw spring-boot:run
 ```
 
-Windows：
+Windows PowerShell：
 
 ```powershell
 .\mvnw.cmd spring-boot:run
 ```
 
-首次启动需要下载 Maven 依赖，请保持网络可用。看到类似下面的日志表示后端启动成功：
+第一次启动会下载 Maven 依赖，需要保持网络可用。出现以下日志表示启动成功：
 
 ```text
 Started NewOspfuApplication
@@ -159,15 +235,24 @@ Started NewOspfuApplication
 http://localhost:8080
 ```
 
-可以用公开接口验证数据库和后端：
+验证公开接口：
 
 ```bash
 curl "http://localhost:8080/api/secondhand/list?page=1&size=5"
 ```
 
-## 6. 配置并启动前端
+如需启用 Swagger，在启动前设置：
 
-打开第二个终端，进入前端目录：
+```bash
+export SPRINGDOC_SWAGGER_UI_ENABLED='true'
+export SPRINGDOC_API_DOCS_ENABLED='true'
+```
+
+然后访问 `http://localhost:8080/swagger-ui.html`。
+
+## 7. 配置并启动前端
+
+保持后端运行，打开第二个终端：
 
 ```bash
 cd campus-frontend
@@ -187,121 +272,156 @@ Windows PowerShell：
 Copy-Item .env.example .env
 ```
 
-如需使用完整地图功能，编辑 `campus-frontend/.env`，填写自己的高德地图 Key：
+如果需要完整地图功能，编辑 `campus-frontend/.env`：
 
 ```dotenv
-VITE_AMAP_KEY=your_amap_key
-VITE_AMAP_SECURITY_CODE=your_amap_security_code
+VITE_AMAP_KEY=你的高德Web端JS API Key
+VITE_AMAP_SECURITY_CODE=你的高德安全密钥
 ```
 
-安装依赖并启动：
+安装锁定版本的依赖并启动：
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
-前端默认地址：
+浏览器打开：
 
 ```text
 http://localhost:5173
 ```
 
-Vite 已将 `/api` 请求代理到 `http://localhost:8080`，本地开发时不需要修改接口地址。
+前端请求使用 `/api`，Vite 会自动代理到 `http://localhost:8080`，本地开发不需要修改接口地址。
 
-## 7. 可选：启动 Redis
+## 8. 首次使用
 
-Redis 用于保存 Agent 会话。未启动 Redis 时，系统会使用内存存储；后端重启后内存会话会丢失。
+1. 打开 `http://localhost:5173`。
+2. 使用注册页面创建普通用户。
+3. 登录后即可使用二手交易、失物招领、宿舍管理等业务。
+4. 配置 DashScope Key 后再测试智能 Agent。
+5. 配置高德 Key 后再测试地图和路线规划。
 
-使用 Docker 启动 Redis：
+导入的完整快照包含若干演示账号，但密码没有作为运行凭据公开。新环境建议直接注册新用户。
 
-```bash
-docker run -d --name osp-redis -p 6379:6379 redis:7-alpine
-```
+注册 `ADMIN` 或 `DORM_MANAGER` 角色时，后端还要求设置 `ADMIN_REGISTER_KEY`，并在注册请求中提供相同的注册码。
 
-已有容器再次启动：
-
-```bash
-docker start osp-redis
-```
-
-默认 Redis 地址为 `localhost:6379`，数据库编号为 `0`。
-
-## 8. 推荐启动顺序
+## 9. 推荐启动顺序
 
 1. 启动 MySQL。
-2. 导入 `docs/sql/campus_platform_20260611.sql`。
-3. 设置数据库密码和 `JWT_SECRET`。
-4. 可选启动 Redis。
-5. 在项目根目录启动后端。
-6. 在 `campus-frontend` 目录启动前端。
-7. 浏览器打开 `http://localhost:5173`。
+2. 首次运行时导入数据库快照。
+3. 启动 Redis，或者设置无 Redis 的降级变量。
+4. 设置数据库密码和 `JWT_SECRET`。
+5. 可选设置 DashScope、高德和 OSS 凭据。
+6. 在项目根目录启动后端。
+7. 在 `campus-frontend` 目录启动前端。
+8. 打开 `http://localhost:5173`。
 
-## 9. 构建检查
+## 10. 测试与构建
 
-后端编译：
+运行后端测试：
 
 ```bash
-./mvnw -q -DskipTests compile
+./mvnw test
 ```
 
-前端生产构建：
+构建后端：
+
+```bash
+./mvnw -DskipTests package
+```
+
+构建前端：
 
 ```bash
 cd campus-frontend
 npm run build
 ```
 
-## 10. 常见问题
+前端构建产物位于 `campus-frontend/dist/`。
 
-### 后端提示数据库连接失败
+## 11. 常见问题
 
-确认 MySQL 已启动、密码正确，并检查数据库是否存在：
+### Java 版本不正确
+
+如果 Maven 提示不支持 Java 版本，请确认：
+
+```bash
+java -version
+./mvnw -version
+```
+
+两条命令都应显示 Java 21。
+
+### MySQL 连接失败
+
+确认 MySQL 已启动、密码正确，并检查数据库：
 
 ```bash
 mysql -u root -p -e "SHOW DATABASES LIKE 'campus_platform';"
 ```
 
-### 后端提示 JWT 密钥未配置
+如果 MySQL 不在本机或端口不是 3306，请设置 `SPRING_DATASOURCE_URL`。
 
-设置 `JWT_SECRET`，并确保它是 Base64 编码、解码后至少 32 字节：
+### JWT 密钥错误
+
+如果日志提示 JWT 未配置、格式无效或长度不足，请重新生成：
 
 ```bash
-export JWT_SECRET="$(openssl rand -base64 32)"
+openssl rand -base64 32
 ```
 
-### 端口已被占用
+将完整输出保存到 `JWT_SECRET`，不要使用过短的普通字符串。
 
-检查占用进程：
+### Redis 连接失败
+
+优先启动 Redis。暂时不需要 Redis 时，设置：
+
+```bash
+export SPRING_CACHE_TYPE='none'
+export AGENT_GRAPH_REDIS_CHECKPOINT_ENABLED='false'
+```
+
+### Node.js 或 Vite 版本错误
+
+Vite 7.3.1 要求 Node.js `^20.19.0 || >=22.12.0`。推荐安装 Node.js 22 LTS，然后重新执行：
+
+```bash
+rm -rf node_modules
+npm ci
+```
+
+### 前端请求接口失败
+
+确认：
+
+- 后端正在 `http://localhost:8080` 运行。
+- 前端通过 `npm run dev` 启动，而不是直接打开 HTML 文件。
+- `campus-frontend/vite.config.js` 中的代理地址仍是 `http://localhost:8080`。
+- 浏览器中访问的是 `http://localhost:5173`。
+
+### 端口被占用
+
+macOS/Linux：
 
 ```bash
 lsof -i :8080
 lsof -i :5173
 ```
 
-也可以临时修改后端 `server.port` 或前端 `vite.config.js` 中的端口。
+可以结束占用进程，或修改后端 `server.port` 和前端 `vite.config.js`。
 
-### 前端请求接口失败
+### Agent、地图或上传功能不可用
 
-确认：
+- Agent：检查 `AI_DASHSCOPE_API_KEY` 和 `LLM_MODEL`。
+- 后端地图服务：检查 `AMAP_WEB_KEY`。
+- 前端地图：检查 `VITE_AMAP_KEY` 和 `VITE_AMAP_SECURITY_CODE`。
+- OSS：检查两个 `ALIYUN_OSS_*` 环境变量。
 
-- 后端已经运行在 `http://localhost:8080`。
-- 前端通过 `npm run dev` 运行在 `http://localhost:5173`。
-- 没有直接双击 HTML 文件打开前端。
-- `campus-frontend/vite.config.js` 中的代理地址没有被修改。
+## 12. 安全提醒
 
-### Redis 连接警告
-
-如果日志提示 Redis 不可用，但普通功能正常，这是预期的内存降级行为。需要保留 Agent 会话时再启动 Redis。
-
-### 地图或智能 Agent 不可用
-
-地图需要有效的高德 Key，智能 Agent 需要有效的模型 API Key。这些第三方凭证不会随 Git 仓库上传，需要克隆者自行申请和配置。
-
-## 11. 数据与安全说明
-
-- `.env`、数据库密码、JWT 密钥和第三方 API Key 不应提交到 Git。
-- 当前完整 SQL 快照可能包含测试账号、手机号、邮箱等数据，只应在受信任环境中使用。
-- 如果仓库准备公开，请先生成脱敏数据或只上传数据库表结构。
-- SQL 中部分图片为阿里云 OSS URL，查看这些历史图片时需要能够访问对应的远程地址。
-
+- 不要提交 `.env`、数据库密码、JWT 密钥或第三方 API Key。
+- 不要把 Token 或密钥直接粘贴到 Issue、聊天记录或截图中。
+- 完整 SQL 快照包含演示数据，只应在本地或受信任环境使用。
+- 如果仓库需要公开发布，应改用脱敏数据或仅保留数据库结构。
+- SQL 中部分历史图片使用远程 OSS URL，离线环境可能无法显示。
