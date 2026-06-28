@@ -11,7 +11,7 @@
           <template #header>
             <div class="card-header">
               <span>我的宿舍</span>
-              <el-button v-if="myDormitory" link type="primary" @click="openDormitoryDetail(myDormitory.id)">
+              <el-button v-if="myDormitory?.id" link type="primary" @click="openDormitoryDetail(myDormitory.id)">
                 查看详情
               </el-button>
             </div>
@@ -22,7 +22,7 @@
             <el-descriptions :column="1" border>
               <el-descriptions-item label="校区">{{ myDormitoryMeta.campus || '-' }}</el-descriptions-item>
               <el-descriptions-item label="楼栋">{{ myDormitory.building }}</el-descriptions-item>
-              <el-descriptions-item label="楼层">{{ myDormitory.floor }} 层</el-descriptions-item>
+              <el-descriptions-item label="楼层">{{ myDormitory.floor ? `${myDormitory.floor} 层` : '-' }}</el-descriptions-item>
               <el-descriptions-item label="房间号">{{ myDormitory.roomNo }}</el-descriptions-item>
               <el-descriptions-item label="床位号">{{ myDormitoryMeta.bed || '-' }}</el-descriptions-item>
               <el-descriptions-item label="入住日期">{{ myDormitoryMeta.checkInDate || '-' }}</el-descriptions-item>
@@ -190,11 +190,25 @@ const fetchMyDormitory = async () => {
       userApi.getDormitory().catch(() => null)
     ])
 
-    myDormitory.value = dormitoryRes.code === 200 ? dormitoryRes.data || null : null
+    const profileDormitory = profileDormitoryRes?.data || null
+    const assignedDormitory = dormitoryRes.code === 200 ? dormitoryRes.data || null : null
+    const legacyDormitory = profileDormitory?.building && profileDormitory?.room
+      ? {
+          id: null,
+          building: profileDormitory.building,
+          floor: null,
+          roomNo: profileDormitory.room,
+          type: '',
+          currentCount: null,
+          capacity: null
+        }
+      : null
+
+    myDormitory.value = assignedDormitory || legacyDormitory
     myDormitoryMeta.value = {
-      campus: profileDormitoryRes?.data?.campus || '',
-      bed: profileDormitoryRes?.data?.bed || '',
-      checkInDate: profileDormitoryRes?.data?.checkInDate || ''
+      campus: profileDormitory?.campus || '',
+      bed: profileDormitory?.bed || '',
+      checkInDate: profileDormitory?.checkInDate || ''
     }
   } catch (error) {
     console.error('获取我的宿舍失败:', error)

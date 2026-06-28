@@ -150,6 +150,7 @@ import {
 interface Props {
   height?: string
   showUserLocation?: boolean
+  autoLocate?: boolean
   selectPointMode?: boolean
   selectPointType?: 'start' | 'end' | 'all'
   manualPath?: [number, number][] // 手动传入的路径数组，用于对接后端Dijkstra算法
@@ -161,6 +162,7 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   height: '100%',
   showUserLocation: false,
+  autoLocate: false,
   selectPointMode: false,
   selectPointType: 'all',
   manualPath: () => [],
@@ -186,7 +188,7 @@ const mapContainer = ref<HTMLElement | null>(null)
 const loading = ref(false)
 const loadingText = ref('加载地图...')
 const mapErrorMessage = ref('')
-let mapTileProbeTimer: number | null = null
+let autoLocateStarted = false
 
 // 搜索相关
 const searchKeyword = ref('')
@@ -265,13 +267,6 @@ const ensurePluginReady = async (pluginName: string, checker: () => boolean) => 
   return checker()
 }
 
-const clearMapTileProbeTimer = () => {
-  if (mapTileProbeTimer !== null) {
-    window.clearTimeout(mapTileProbeTimer)
-    mapTileProbeTimer = null
-  }
-}
-
 const reportAmapRuntimeError = (raw: unknown) => {
   if (mapErrorMessage.value) return
   const text = String(raw || '')
@@ -320,30 +315,6 @@ const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
   const reasonRecord = asRecord(reason)
   const rawError = reasonRecord.message || reasonRecord.info || reason
   reportAmapRuntimeError(rawError)
-}
-
-const hasAmapTileTraffic = () => {
-  try {
-    const entries = performance.getEntriesByType('resource') as PerformanceResourceTiming[]
-    return entries.some((entry) => {
-      const name = (entry.name || '').toLowerCase()
-      if (!/(autonavi|amap)\.com/.test(name)) return false
-      return /(tile|maptile|vector|style|vt\?|sprite|roadnet|overlay)/.test(name)
-    })
-  } catch {
-    return false
-  }
-}
-
-const startMapTileProbe = () => {
-  clearMapTileProbeTimer()
-  mapTileProbeTimer = window.setTimeout(() => {
-    if (mapErrorMessage.value || !map.value) return
-    if (hasAmapTileTraffic()) return
-    mapErrorMessage.value = '地图底图未成功加载（可能是 Key/SCode/Referer 或网络限制）'
-    loading.value = false
-    ElMessage.warning('地图底图未成功加载，请检查高德配置')
-  }, 12000)
 }
 
 const probeAmapAvailability = async () => {
@@ -403,7 +374,7 @@ const initMap = async () => {
   if (!mapContainer.value) return
 
   try {
-    clearMapTileProbeTimer()
+    autoLocateStarted = false
     mapErrorMessage.value = ''
     loading.value = true
     loadingText.value = '加载高德地图...'
@@ -436,8 +407,19 @@ const initMap = async () => {
       loading.value = false
       // 兜底探测：有些黑屏场景不会触发 map error 事件
       probeAmapAvailability()
-      // 二次兜底：检测是否有底图资源流量
-      startMapTileProbe()
+
+      if (props.autoLocate && !autoLocateStarted) {
+        autoLocateStarted = true
+        if (userLocation.value) {
+          applyUserLocation(
+            userLocation.value.lat,
+            userLocation.value.lng,
+            userLocation.value.accuracy
+          )
+        } else {
+          void handleLocate()
+        }
+      }
     }
     map.value.on('complete', mapCompleteHandler)
 
@@ -445,7 +427,6 @@ const initMap = async () => {
     mapErrorHandler = (e: AmapMapErrorEvent) => {
       const rawError = e?.info || e?.message || e
       mapErrorMessage.value = resolveAmapErrorMessage(rawError)
-      clearMapTileProbeTimer()
       loading.value = false
       ElMessage.error(`地图加载异常：${mapErrorMessage.value}`)
       console.error('高德地图错误:', rawError)
@@ -478,7 +459,6 @@ const initMap = async () => {
     })
   } catch (error) {
     console.error('初始化地图失败:', error)
-    clearMapTileProbeTimer()
     mapErrorMessage.value = resolveAmapErrorMessage(error)
     ElMessage.error('地图加载失败，请检查配置')
     loading.value = false
@@ -1629,7 +1609,6 @@ const handleReload = async () => {
   mapErrorMessage.value = ''
   loading.value = true
   loadingText.value = '刷新地图...'
-  clearMapTileProbeTimer()
 
   clearRoute()
   cleanupPoiMarkers()
@@ -1756,7 +1735,6 @@ watch(
 )
 
 onUnmounted(() => {
-  clearMapTileProbeTimer()
   window.removeEventListener('error', handleWindowError, true)
   window.removeEventListener('unhandledrejection', handleUnhandledRejection)
   clearRoute()

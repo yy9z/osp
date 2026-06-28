@@ -20,6 +20,7 @@ import com.caspar.service.DormitoryService;
 import com.caspar.service.NotificationService;
 import com.caspar.util.PaginationUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -581,6 +582,7 @@ public class DormitoryServiceImpl implements DormitoryService {
 
     @Override
     @Transactional
+    @CacheEvict(cacheNames = "userDormitory", allEntries = true)
     public DormBuilding updateBuilding(Long operatorId, String operatorRole, Long buildingId, DormBuildingUpdateDTO updateDTO) {
         if (!"ADMIN".equals(operatorRole)) {
             throw new IllegalArgumentException("只有管理员可以修改楼栋");
@@ -679,6 +681,7 @@ public class DormitoryServiceImpl implements DormitoryService {
 
     @Override
     @Transactional
+    @CacheEvict(cacheNames = "userDormitory", key = "#assignDTO.userId")
     public void assignDormitory(Long operatorId, String operatorRole, DormitoryAssignDTO assignDTO) {
         if (assignDTO.getUserId() == null || assignDTO.getDormitoryId() == null) {
             throw new IllegalArgumentException("请先选择用户和宿舍");
@@ -744,6 +747,7 @@ public class DormitoryServiceImpl implements DormitoryService {
 
     @Override
     @Transactional
+    @CacheEvict(cacheNames = "userDormitory", key = "#userId")
     public void checkoutDormitory(Long operatorId, String operatorRole, Long userId) {
         if (userId == null) {
             throw new IllegalArgumentException("用户ID不能为空");

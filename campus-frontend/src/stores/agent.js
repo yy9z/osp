@@ -137,13 +137,7 @@ export const useAgentStore = defineStore('agent', () => {
   }
 
   async function newSession() {
-    if (sessionId.value) {
-      try {
-        await clearAgentSession(sessionId.value)
-      } catch (e) {
-        // 忽略清除失败
-      }
-    }
+    // 新建会话只切换到空白对话，历史记录由用户通过删除按钮单独管理。
     sessionId.value = null
     activeSessionId.value = null
     messages.value = []

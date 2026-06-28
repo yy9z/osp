@@ -112,13 +112,8 @@ async function handleConfirmation(payload) {
 
 async function handleNewSession() {
   if (agentStore.messages.length === 0) return
-  await ElMessageBox.confirm('确定开始新对话吗？当前对话记录将被清除。', '新建对话', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
-    type: 'info'
-  }).then(async () => {
-    await agentStore.newSession()
-  }).catch(() => {})
+  await agentStore.newSession()
+  ElMessage.success('已新建对话，原对话已保存在历史会话中')
 }
 
 async function handleOpenSession(sessionId) {

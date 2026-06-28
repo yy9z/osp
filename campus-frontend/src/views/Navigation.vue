@@ -44,6 +44,7 @@
         ref="mapRef"
         height="100%"
         :show-user-location="true"
+        :auto-locate="true"
         :hide-search-box="true"
         :select-point-mode="isSelectingPoint"
         :select-point-type="selectingType"
@@ -1153,6 +1154,26 @@ const submitAgentQuery = async (text: string, options: { continueSession?: boole
   return { handled: false, data }
 }
 
+const COMPLEX_NAVIGATION_PATTERN = /(?:从.+?(?:到|去)|途经|经过|顺路|然后|再去|先去|附近|最近|依次|骑行|步行|开车|驾车|公交|避开|绕开|最快|最短|安全|拥堵|夜间|下雨|分钟|小时|点前|之前|起点|终点)/
+const PLACE_NAME_PATTERN = /(?:校区|图书馆|食堂|餐厅|教学楼|宿舍|寝室|公寓|学院|楼|馆|门|操场|体育场|体育馆|超市|商店|快递|驿站|医院|校医院|实验室|报告厅|礼堂|广场|中心|办公室|银行|车站|停车场|咖啡店)$/
+
+const getDirectPlaceKeyword = (rawText: string) => {
+  const normalized = rawText.trim()
+  if (!normalized || normalized.length > 32 || COMPLEX_NAVIGATION_PATTERN.test(normalized)) {
+    return null
+  }
+
+  const keyword = normalized
+    .replace(/^(?:请|麻烦)?(?:带我去|我要去|导航到|前往|去)\s*/, '')
+    .replace(/(?:怎么走|在哪里|在哪儿|导航|路线)[？?]?$/, '')
+    .trim()
+
+  if (!keyword || keyword.length > 24 || /[，,。；;！!]/.test(keyword)) {
+    return null
+  }
+  return PLACE_NAME_PATTERN.test(keyword) ? keyword : null
+}
+
 const handleNaturalSubmit = async () => {
   const text = naturalInput.value.trim()
   if (!text) return
@@ -1161,6 +1182,14 @@ const handleNaturalSubmit = async () => {
   try {
     const continueSession = clarificationRequired.value || !!pendingAgentQuery.value
     if (!continueSession) {
+      const directKeyword = getDirectPlaceKeyword(text)
+      if (directKeyword) {
+        // 简单地点查询直接走地图解析，避免等待大模型规划。
+        void clearNavigationAgentSession()
+        isAgentThinking.value = false
+        await resolvePlace(directKeyword, undefined, { source: 'direct' })
+        return
+      }
       await clearNavigationAgentSession()
     }
 

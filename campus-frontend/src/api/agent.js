@@ -14,7 +14,7 @@ export function chatWithAgent(data) {
 }
 
 /**
- * 清除 Agent 会话（新建对话）
+ * 删除 Agent 会话
  * @param {string} sessionId
  */
 export function clearAgentSession(sessionId) {

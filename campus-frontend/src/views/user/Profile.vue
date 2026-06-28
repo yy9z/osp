@@ -148,7 +148,7 @@
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores'
-import { userApi } from '@/api'
+import { dormitoryApi, userApi } from '@/api'
 import { ElMessage } from 'element-plus'
 import { Camera, School } from '@element-plus/icons-vue'
 import { uploadToOSS } from '@/utils/oss'
@@ -251,16 +251,25 @@ const initProfileForm = async () => {
 
 const initDormitoryForm = async () => {
   try {
-    const res = await userApi.getDormitory()
-    if (res.data) {
-      dormitoryForm.campus = res.data.campus || ''
-      dormitoryForm.building = res.data.building || ''
-      dormitoryForm.room = res.data.room || ''
-      dormitoryForm.bed = res.data.bed || ''
-      dormitoryForm.checkInDate = res.data.checkInDate || ''
-    }
+    const [dormitoryRes, profileDormitoryRes] = await Promise.all([
+      dormitoryApi.getMyDormitory(),
+      userApi.getDormitory().catch(() => null)
+    ])
+    const assignedDormitory = dormitoryRes.code === 200 ? dormitoryRes.data || null : null
+    const profileDormitory = profileDormitoryRes?.data || null
+
+    dormitoryForm.campus = profileDormitory?.campus || ''
+    dormitoryForm.building = assignedDormitory?.building || profileDormitory?.building || ''
+    dormitoryForm.room = assignedDormitory?.roomNo || profileDormitory?.room || ''
+    dormitoryForm.bed = profileDormitory?.bed || ''
+    dormitoryForm.checkInDate = profileDormitory?.checkInDate || ''
   } catch (error) {
     console.error('获取宿舍信息失败:', error)
+    dormitoryForm.campus = ''
+    dormitoryForm.building = ''
+    dormitoryForm.room = ''
+    dormitoryForm.bed = ''
+    dormitoryForm.checkInDate = ''
   }
 }
 
@@ -354,6 +363,12 @@ watch(
   },
   { immediate: true }
 )
+
+watch(activeTab, (tab) => {
+  if (tab === 'dormitory') {
+    initDormitoryForm()
+  }
+})
 
 onMounted(() => {
   initProfileForm()
